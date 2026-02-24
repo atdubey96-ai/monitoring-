@@ -1,0 +1,5 @@
+{
+  "name": "IndianOil SCADA Burner Monitor",
+  "description": "Real-time Reformer Burner Control System with Supabase cloud integration.",
+  "requestFramePermissions": []
+}

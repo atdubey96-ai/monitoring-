@@ -1,0 +1,58 @@
+@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;600&family=Rajdhani:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Rajdhani", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "EB Garamond", serif;
+}
+
+:root {
+  --bg: #0f172a;
+  --ink: #e2e8f0;
+  --accent: #F37022;
+  --line: #334155;
+}
+
+body {
+  @apply bg-[#0f172a] text-[#e2e8f0] font-sans;
+  transition: background 0.3s, color 0.3s;
+}
+
+body.light-theme {
+  @apply bg-[#f0f4fa] text-[#1e293b];
+}
+
+/* Custom Burner Colors */
+.burner-B { @apply bg-[#2563eb] shadow-[0_0_8px_2px_rgba(37,99,235,0.65)]; }
+.burner-N { @apply bg-[#d97706] shadow-[0_0_9px_2px_rgba(217,119,6,0.65)]; }
+.burner-O { @apply bg-[#16a34a] shadow-[0_0_9px_2px_rgba(22,163,74,0.65)]; }
+.burner-C { @apply bg-[#1e293b] border border-[#334155]; }
+
+td {
+  @apply h-[30px] rounded-[5px] border border-white/5 transition-all cursor-pointer relative;
+  contain: layout style;
+  will-change: transform;
+}
+
+td:hover {
+  @apply scale-110 z-10;
+}
+
+/* Animations */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 2s infinite;
+}
+
+@keyframes slamIn {
+  0% { transform: scale(2) translateY(-100px) skewX(-10deg); opacity: 0; }
+  100% { transform: scale(1) translateY(0) skewX(-10deg); opacity: 1; }
+}
+
+.animate-slam {
+  animation: slamIn 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
