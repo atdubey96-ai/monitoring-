@@ -61,6 +61,22 @@ In `Uniformance_Push_DATA.xlsm`:
 Run `supabase_migration.sql` in the SQL editor (it deletes duplicate `snapshot_time` rows – look at
 the SELECT at the top first). 
 
+## Option 2: fix it in Supabase only (no Excel change)
+Use this if you cannot touch the workbook. Run `supabase_spike_filter.sql` in the Supabase SQL
+editor (test on a copy of the table first). It adds:
+
+* **`h2_material_balance_raw`**: every row exactly as Excel pushed it (never altered, not readable via the API).
+* **Repair trigger**: when a new row arrives, a *lone* spike in the previous row (more than 25 % away
+  from both neighbours while the neighbours agree within 5 %) is replaced by the median. A genuine step
+  change is left alone. The newest row is never touched, so the latest point can still show a spike for
+  one push cycle until the next row arrives.
+* **`h2_material_balance_clean` view**: median-of-3 over the table, for a dashboard that reads the view.
+
+Thresholds live in `public.h2_spike_params()`. Tested against a local Postgres (PGlite): lone spike
+repaired, real step kept, upsert overwrite works, raw log keeps the original value. Not tested on Supabase
+itself, and it only hides isolated spikes, not a sustained wrong plateau. It works with or without the
+Excel changes above; combine both for best results.
+
 ## Tuning (top of `SettledPush.bas`)
 | Symptom | Change |
 |---|---|
