@@ -10,7 +10,13 @@ user's OFFICE PC and cannot be edited from here.
 * SQL files and the dashboard patch are written and tested locally (PGlite / headless Chromium).
 * Watchdog scripts need no change.
 
-## TODO (in this order) once the environment has network + secrets
+## PREFERRED ROUTE (no tokens, no network settings): claude.ai connectors
+* Supabase connector (OAuth) -> run the SQL with its SQL/migration tools, project ref `mozuuowwdfyqqvpiyetk` only. Never use create/pause/cost tools.
+* Vercel connector is read-only (projects, deployments, logs): use it to verify. Deploys happen via the Vercel Git integration after the repo is connected once (Vercel > Project > Settings > Git).
+* If connector tools are not in the tool list, ask the user to enable them for this chat (or start a new session).
+* Fallback only: `automation/apply_supabase.py` with a token in the environment.
+
+## TODO (in this order)
 1. `python3 automation/apply_supabase.py` (env: `SUPABASE_ACCESS_TOKEN`; allow api.supabase.com). Runs backup, 3 SQL files, verification.
    Report the verification output. If a file fails, read the error, fix the SQL (re-run is safe), retry.
 2. Dashboard repo: user creates empty private `atdubey96-ai/h2-balance-dashboard` and installs the Claude GitHub App.
