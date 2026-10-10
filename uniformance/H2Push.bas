@@ -46,30 +46,35 @@ Public Function Push(ByVal isFinal As Boolean) As Long
     rawDate = CDate(ws.Range("H20").Value)
     sTimestamp = Format(rawDate, "yyyy-mm-dd") & "T" & Format(rawDate, "hh:mm:ss") & "+05:30"
 
+    ' Built in several statements: VBA allows at most 24 line continuations ( _ ) per statement.
     sBody = "{" & _
         """snapshot_time"":""" & sTimestamp & """," & _
         IIf(SQL_READY, """is_final"":" & IIf(isFinal, "true", "false") & ",", "") & _
         """total_generation"":" & N(ws.Range("H21").Value) & "," & _
         """total_consumption"":" & N(ws.Range("H22").Value) & "," & _
-        """difference"":" & N(ws.Range("H23").Value) & "," & _
+        """difference"":" & N(ws.Range("H23").Value) & ","
+    sBody = sBody & _
         """gen_hgu3"":" & N(ws.Range("H25").Value) & "," & _
         """gen_psa2"":" & N(ws.Range("H26").Value) & "," & _
         """gen_msq"":" & N(ws.Range("H27").Value) & "," & _
         """gen_hgu1"":" & N(ws.Range("H28").Value) & "," & _
         """gen_hgu4"":" & N(ws.Range("H29").Value) & "," & _
-        """gen_hgu2_syn_gas"":" & N(ws.Range("H30").Value) & "," & _
+        """gen_hgu2_syn_gas"":" & N(ws.Range("H30").Value) & ","
+    sBody = sBody & _
         """con_hgu3"":" & N(ws.Range("H32").Value) & "," & _
         """con_vgo"":" & N(ws.Range("H33").Value) & "," & _
         """con_dhdt1"":" & N(ws.Range("H34").Value) & "," & _
         """con_dhds"":" & N(ws.Range("H35").Value) & "," & _
         """con_dhdt2"":" & N(ws.Range("H36").Value) & "," & _
-        """con_isom"":" & N(ws.Range("H37").Value) & "," & _
+        """con_isom"":" & N(ws.Range("H37").Value) & ","
+    sBody = sBody & _
         """con_sru"":" & N(ws.Range("H38").Value) & "," & _
         """con_hgu4"":" & N(ws.Range("H39").Value) & "," & _
         """con_lab"":" & N(ws.Range("H40").Value) & "," & _
         """con_ghc"":" & N(ws.Range("H41").Value) & "," & _
         """con_hgu1"":" & N(ws.Range("H42").Value) & "," & _
-        """con_nba"":" & N(ws.Range("H43").Value) & "," & _
+        """con_nba"":" & N(ws.Range("H43").Value) & ","
+    sBody = sBody & _
         """header_pressure_dhdt1"":" & N(ws.Range("H45").Value) & "," & _
         """ghc_fg_opening"":" & N(ws.Range("H46").Value) & "," & _
         """ghc_flare_opening"":" & N(ws.Range("H47").Value) & "}"
