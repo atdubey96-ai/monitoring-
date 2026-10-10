@@ -23,11 +23,12 @@ In `Uniformance_Push_DATA.xlsm`:
 ### A. Formulas (workbook)
 | Cell | Old | New |
 |---|---|---|
-| `Sheet1!D1` | `=NOW()-2/24/60` | `=ROUND(FLOOR(NOW()-5/1440,2/1440)*86400,0)/86400` |
+| `Sheet1!M1` (new) | empty | `=NOW()` (the macro overwrites it with a frozen clock each cycle) |
+| `Sheet1!D1` | `=NOW()-2/24/60` | `=ROUND(FLOOR($M$1-5/1440,2/1440)*86400,0)/86400` |
 | `Sheet1!E1` | `=D1-3/24/60` | `=D1-2/1440` |
 
 * `5/1440` = **lag (5 min)** so PHD has the data; `2/1440` = bucket = push interval (2 min), snapped to
-  even 2-min boundaries so the request is identical on every retry.
+  even 2-min boundaries so the request is identical on every retry. `M1` holds the cycle's start time, so the window cannot move while the macro is re-reading.
 * In `Sheet1!D3` change `"30m"` → `"2m"`, and in `UNIFORMANCE!D4` change `"10m"` → `"2m"`
   (edit inside the formula; don't touch other arguments).
 * Check `UNIFORMANCE` still returns exactly **one** data row at row 8 (as today).

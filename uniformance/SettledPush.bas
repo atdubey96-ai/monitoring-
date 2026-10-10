@@ -18,11 +18,12 @@ Option Explicit
 Private Const SHEET_NAME   As String = "Sheet1"
 Private Const MAX_READS    As Long = 6        ' max PHD reads per cycle
 Private Const READ_GAP_SEC As Long = 8        ' pause between reads
-Private Const REL_TOL      As Double = 0.005  ' two reads "agree" if within 0.5 %
+Private Const REL_TOL      As Double = 0.01   ' two reads "agree" if within 1 %
 Private Const ABS_TOL      As Double = 0.02   ' ...or within this (tiny values, e.g. bar)
 Private Const JUMP_FRAC    As Double = 0.25   ' step in Total Gen/Con that needs confirming
 Private Const CONFIRM_FRAC As Double = 0.05   ' two cycles within 5 % = a real shift
 Private Const MAX_HOLDS    As Long = 3        ' after this many unsettled cycles push anyway
+Private Const CLOCK_CELL   As String = "M1"     ' cycle clock: Sheet1!D1 reads this instead of NOW()
 ' ----------------------------------------
 
 Private haveLast   As Boolean
@@ -32,24 +33,37 @@ Private pendingSet As Boolean
 Private pendingGen As Double
 Private pendingCon As Double
 Private holdCount  As Long
+Private snapAddr(1 To 80) As String
 
 ' Returns True when it is safe to push. msg explains what happened.
 Public Function WaitForSettledData(ByRef msg As String) As Boolean
     Dim ws As Worksheet
     Set ws = ThisWorkbook.Sheets(SHEET_NAME)
 
+    ' Freeze the clock for this cycle so the PHD time window cannot move between reads.
+    ws.Range(CLOCK_CELL).Value = Now
+
     Dim prev As Variant, cur As Variant
     Dim prevTs As Double, curTs As Double
-    Dim i As Long, settled As Boolean
+    Dim i As Long, k As Long, settled As Boolean
+    Dim why As String
 
     For i = 1 To MAX_READS
         ForceRefresh
         cur = Snap(ws)
         curTs = StampOf(ws)
-        If i > 1 And IsArray(cur) And IsArray(prev) Then
-            If curTs = prevTs And IsStable(prev, cur) Then
-                settled = True
-                Exit For
+        If i > 1 Then
+            If Not IsArray(cur) Or Not IsArray(prev) Then
+                why = "error value in sheet"
+            ElseIf curTs <> prevTs Then
+                why = "time window moved"
+            Else
+                k = WorstIndex(prev, cur)
+                If k = 0 Then
+                    settled = True
+                    Exit For
+                End If
+                why = snapAddr(k) & " " & Format(prev(k), "0.0") & "->" & Format(cur(k), "0.0")
             End If
         End If
         prev = cur
@@ -60,11 +74,11 @@ Public Function WaitForSettledData(ByRef msg As String) As Boolean
     If Not settled Then
         holdCount = holdCount + 1
         If holdCount <= MAX_HOLDS Then
-            msg = "not settled after " & MAX_READS & " reads (hold " & holdCount & "/" & MAX_HOLDS & ")"
+            msg = "not settled after " & MAX_READS & " reads [" & why & "] (hold " & holdCount & "/" & MAX_HOLDS & ")"
             WaitForSettledData = False
             Exit Function
         End If
-        msg = "FORCED push after " & MAX_HOLDS & " unsettled cycles"
+        msg = "FORCED push after " & MAX_HOLDS & " unsettled cycles [" & why & "]"
     Else
         msg = "settled in " & i & " reads"
     End If
@@ -108,6 +122,7 @@ Private Function Snap(ws As Worksheet) As Variant
                 Exit Function
             End If
             n = n + 1
+            snapAddr(n) = c.Address(False, False)
             If IsNumeric(c.Value) And Not IsEmpty(c.Value) Then v(n) = CDbl(c.Value) Else v(n) = 0
         Next c
     Next a
@@ -119,8 +134,10 @@ Private Function StampOf(ws As Worksheet) As Double
     If IsDate(ws.Range("H3").Value) Then StampOf = CDbl(CDate(ws.Range("H3").Value))
 End Function
 
-Private Function IsStable(a As Variant, b As Variant) As Boolean
+' Index of the value that differs most between two reads (0 = all values agree).
+Private Function WorstIndex(a As Variant, b As Variant) As Long
     Dim i As Long, d As Double, tol As Double, m As Double
+    Dim ratio As Double, best As Double
     For i = LBound(a) To UBound(a)
         d = Abs(a(i) - b(i))
         m = Abs(a(i))
@@ -128,11 +145,13 @@ Private Function IsStable(a As Variant, b As Variant) As Boolean
         tol = REL_TOL * m
         If tol < ABS_TOL Then tol = ABS_TOL
         If d > tol Then
-            IsStable = False
-            Exit Function
+            ratio = d / tol
+            If ratio > best Then
+                best = ratio
+                WorstIndex = i
+            End If
         End If
     Next i
-    IsStable = True
 End Function
 
 ' A big step in Total Generation / Consumption must appear in two
