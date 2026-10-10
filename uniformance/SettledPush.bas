@@ -119,6 +119,9 @@ Public Sub PrepareLive()
     If ws.Range(CLOCK_CELL).HasFormula Then ws.Range(CLOCK_CELL).Value = Now
     ws.Range(LAG_CELL).Value = LIVE_LAG_MIN
     ForceRefresh
+    ' Short pause so PHD can finish filling the sheet before it is read (the BMS variant of Module1
+    ' used the same 3 s wait after Application.Calculate).
+    Application.Wait Now + TimeSerial(0, 0, 3)
 End Sub
 
 ' Re-run every PHDGetData call. CalculateFull is needed because with
