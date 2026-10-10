@@ -1,0 +1,385 @@
+From 3d18bdc7bcb673091a3d03f068dcce3b5fd2589c Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 10 Oct 2026 12:24:49 +0000
+Subject: [PATCH 1/2] Remove isolated data spikes in dashboard API
+
+Adds api/_lib/despike.js and applies it in api/dashboard-data.js: one row
+per snapshot_time, and lone spikes (far from both neighbours that agree
+with each other) are replaced by the median. Real step changes are kept.
+Controlled by H2_DESPIKE / H2_SPIKE_RATIO / H2_SPIKE_AGREE_RATIO /
+H2_SPIKE_ABS_FLOOR env vars.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DwYkxVTtsQ2p3Edf8EzRNV
+---
+ api/_lib/despike.js   | 80 +++++++++++++++++++++++++++++++++++++++++++
+ api/dashboard-data.js |  3 +-
+ test/despike.test.js  | 47 +++++++++++++++++++++++++
+ test/handler.test.js  | 15 ++++++++
+ 4 files changed, 144 insertions(+), 1 deletion(-)
+ create mode 100644 api/_lib/despike.js
+ create mode 100644 test/despike.test.js
+ create mode 100644 test/handler.test.js
+
+diff --git a/api/_lib/despike.js b/api/_lib/despike.js
+new file mode 100644
+index 0000000..d94bdbd
+--- /dev/null
++++ b/api/_lib/despike.js
+@@ -0,0 +1,80 @@
++// Removes isolated spikes from dashboard rows without needing any Excel/DB change.
++// A value is a "lone spike" when it is far from BOTH neighbours while those two
++// neighbours agree with each other. A real step change (neighbours disagree) is kept.
++// The newest and oldest rows are never altered. Rows with the same snapshot time are
++// collapsed to the most recently pushed one.
++
++const NUMERIC_COLUMNS = [
++  'total_generation','total_consumption','difference',
++  'gen_hgu3','gen_psa2','gen_msq','gen_hgu1','gen_hgu4','gen_hgu2_syn_gas',
++  'con_hgu3','con_vgo','con_dhdt1','con_dhds','con_dhdt2','con_isom','con_sru',
++  'con_hgu4','con_lab','con_ghc','con_hgu1','con_nba',
++  'header_pressure_dhdt1','ghc_fg_opening','ghc_flare_opening'
++];
++
++function toNumber(value){
++  if(value === null || value === undefined || value === '') return null;
++  const n = Number(value);
++  return Number.isFinite(n) ? n : null;
++}
++
++function median3(a, b, c){
++  return Math.max(Math.min(a, b), Math.min(Math.max(a, b), c));
++}
++
++function readOptions(env = process.env){
++  const num = (key, fallback) => {
++    const n = Number(env[key]);
++    return Number.isFinite(n) && n > 0 ? n : fallback;
++  };
++  return {
++    enabled: String(env.H2_DESPIKE || 'on').toLowerCase() !== 'off',
++    spikeRatio: num('H2_SPIKE_RATIO', 0.25),
++    agreeRatio: num('H2_SPIKE_AGREE_RATIO', 0.05),
++    absFloor: num('H2_SPIKE_ABS_FLOOR', 1)
++  };
++}
++
++// rowsDesc: newest-first (same order Supabase returns). Returns newest-first.
++function despike(rowsDesc, options = readOptions(), timeColumn = 'snapshot_time', pushedAtColumn = 'pushed_at'){
++  if(!options.enabled || !Array.isArray(rowsDesc) || rowsDesc.length === 0) return rowsDesc;
++
++  // 1. one row per snapshot time (keep the most recently pushed)
++  const byTime = new Map();
++  for(const row of rowsDesc){
++    const key = row[timeColumn];
++    const existing = byTime.get(key);
++    if(!existing || String(row[pushedAtColumn] || '') > String(existing[pushedAtColumn] || '')){
++      byTime.set(key, row);
++    }
++  }
++  const asc = [...byTime.values()].reverse().map(row => ({ ...row }));
++  if(asc.length < 3) return asc.reverse();
++
++  // 2. repair lone spikes, judged against the ORIGINAL neighbours
++  const original = asc.map(row => ({ ...row }));
++  for(let i = 1; i < asc.length - 1; i++){
++    let repairedTotals = false;
++    for(const col of NUMERIC_COLUMNS){
++      const a = toNumber(original[i - 1][col]);
++      const d = toNumber(original[i][col]);
++      const b = toNumber(original[i + 1][col]);
++      if(a === null || d === null || b === null) continue;
++      const scale = Math.max(Math.abs(a), Math.abs(b), options.absFloor);
++      if(Math.abs(a - b) <= options.agreeRatio * scale
++        && Math.abs(d - a) > options.spikeRatio * scale
++        && Math.abs(d - b) > options.spikeRatio * scale){
++        asc[i][col] = median3(a, d, b);
++        if(col === 'total_generation' || col === 'total_consumption') repairedTotals = true;
++      }
++    }
++    if(repairedTotals){
++      const gen = toNumber(asc[i].total_generation);
++      const con = toNumber(asc[i].total_consumption);
++      if(gen !== null && con !== null) asc[i].difference = gen - con;
++    }
++  }
++  return asc.reverse();
++}
++
++module.exports = { despike, readOptions, NUMERIC_COLUMNS };
+diff --git a/api/dashboard-data.js b/api/dashboard-data.js
+index ef5e543..afe25d9 100644
+--- a/api/dashboard-data.js
++++ b/api/dashboard-data.js
+@@ -1,5 +1,6 @@
+ const { getConfig, sendJson, sendMethodNotAllowed, fetchSupabase } = require('./_lib/config');
+ const { requireAuth } = require('./_lib/session');
++const { despike } = require('./_lib/despike');
+ 
+ module.exports = async (req, res) => {
+   if(req.method !== 'GET'){
+@@ -32,7 +33,7 @@ module.exports = async (req, res) => {
+       return sendJson(res, upstream.status, { error:'Upstream data request failed', detail:text.slice(0, 300) });
+     }
+ 
+-    const rows = await upstream.json();
++    const rows = despike(await upstream.json(), undefined, config.supabaseTimeColumn, config.supabasePushedAtColumn);
+     return sendJson(res, 200, { rows });
+   } catch(err){
+     console.error('dashboard-data error', err);
+diff --git a/test/despike.test.js b/test/despike.test.js
+new file mode 100644
+index 0000000..e511df1
+--- /dev/null
++++ b/test/despike.test.js
+@@ -0,0 +1,47 @@
++const assert = require('assert');
++const { despike, readOptions } = require('../api/_lib/despike');
++const opts = readOptions({});
++const mk = (m, gen, con, p = 0.5, pushed = '2026-10-10T00:00:00Z') => ({
++  snapshot_time: `2026-10-10T10:${String(m).padStart(2, '0')}:00Z`, pushed_at: pushed,
++  total_generation: gen, total_consumption: con, difference: gen - con, header_pressure_dhdt1: p });
++const desc = asc => [...asc].reverse();       // Supabase returns newest-first
++const gens = rows => rows.map(r => r.total_generation).reverse();
++
++// lone spike in the middle is repaired, difference recomputed
++let out = despike(desc([mk(0,100000,90000), mk(2,101000,90500), mk(4,400000,91000), mk(6,100500,90800)]), opts);
++assert.deepStrictEqual(gens(out), [100000,101000,101000,100500]);
++assert.strictEqual(out.find(r => r.snapshot_time.includes(':04:')).difference, 101000 - 91000);
++
++// genuine step change is kept
++out = despike(desc([mk(0,100000,90000), mk(2,100500,90000), mk(4,160000,90000), mk(6,160500,90000), mk(8,161000,90000)]), opts);
++assert.deepStrictEqual(gens(out), [100000,100500,160000,160500,161000]);
++
++// newest row and oldest row are never altered
++out = despike(desc([mk(0,900000,90000), mk(2,100000,90000), mk(4,100500,90000), mk(6,900000,90000)]), opts);
++assert.deepStrictEqual(gens(out), [900000,100000,100500,900000]);
++
++// single dip repaired
++out = despike(desc([mk(0,161000,90000), mk(2,50000,90000), mk(4,161500,90000)]), opts);
++assert.deepStrictEqual(gens(out), [161000,161000,161500]);
++
++// small noise untouched
++out = despike(desc([mk(0,100000,90000), mk(2,101500,90000), mk(4,100200,90000)]), opts);
++assert.deepStrictEqual(gens(out), [100000,101500,100200]);
++
++// tiny values (pressure ~0.5) are not treated as spikes by sub-1 noise
++out = despike(desc([mk(0,1,1,0.50), mk(2,1,1,0.6), mk(4,1,1,0.52)]), opts);
++assert.deepStrictEqual(out.map(r => r.header_pressure_dhdt1).reverse(), [0.5, 0.6, 0.52]);
++
++// duplicate snapshot_time -> keep most recently pushed
++out = despike(desc([mk(0,100000,90000), mk(2,900000,90000,0.5,'2026-10-10T10:03:00Z'), mk(2,101000,90000,0.5,'2026-10-10T10:09:00Z'), mk(4,100500,90000)]), opts);
++assert.deepStrictEqual(gens(out), [100000,101000,100500]);
++
++// disabled via env, nulls, short input, input not mutated
++const src = desc([mk(0,100000,90000), mk(2,400000,90000), mk(4,100500,90000)]);
++assert.strictEqual(despike(src, readOptions({ H2_DESPIKE: 'off' })), src);
++assert.deepStrictEqual(despike([], opts), []);
++assert.strictEqual(despike(desc([mk(0,1,1), mk(2,2,2)]), opts).length, 2);
++const withNull = desc([mk(0,100000,90000), { ...mk(2,400000,90000), total_generation: null }, mk(4,100500,90000)]);
++assert.strictEqual(despike(withNull, opts)[1].total_generation, null);
++despike(src, opts); assert.strictEqual(src[1].total_generation, 400000);
++console.log('despike: all tests passed');
+diff --git a/test/handler.test.js b/test/handler.test.js
+new file mode 100644
+index 0000000..54df8b9
+--- /dev/null
++++ b/test/handler.test.js
+@@ -0,0 +1,15 @@
++const assert = require('assert');
++process.env.SUPABASE_URL = 'https://example.supabase.co';
++process.env.SUPABASE_API_KEY = 'x'; process.env.H2_AUTH_USER = 'u';
++process.env.H2_AUTH_PASSWORD = 'p'; process.env.H2_SESSION_SECRET = 's';
++const session = require('../api/_lib/session');
++session.requireAuth = () => ({ user: 'u' });             // skip login for the test
++const t = m => `2026-10-10T10:${String(m).padStart(2, '0')}:00Z`;
++const row = (m, g) => ({ snapshot_time: t(m), pushed_at: t(m), total_generation: g, total_consumption: 90000, difference: g - 90000 });
++global.fetch = async () => ({ ok: true, json: async () => [row(6, 100500), row(4, 400000), row(2, 101000), row(0, 100000)] });
++const handler = require('../api/dashboard-data');
++let body; const res = { setHeader() {}, end(b) { body = JSON.parse(b); } };
++handler({ method: 'GET', url: '/api/dashboard-data?minutes=60' }, res).then(() => {
++  assert.deepStrictEqual(body.rows.map(r => r.total_generation), [100500, 101000, 101000, 100000]);
++  console.log('handler: spike removed from API response, newest-first order kept');
++});
+-- 
+2.43.0
+
+
+From 5dc4b55d1ded9db485bcb0ceca775c387960aa9c Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 10 Oct 2026 13:50:30 +0000
+Subject: [PATCH 2/2] Dashboard: provisional/final rows, amber live band,
+ de-spike only provisional rows
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DwYkxVTtsQ2p3Edf8EzRNV
+---
+ api/_lib/config.js    |  1 +
+ api/_lib/despike.js   |  3 ++-
+ api/dashboard-data.js | 10 +++++++++-
+ index.html            | 40 ++++++++++++++++++++++++++++++++++++++++
+ test/despike.test.js  |  5 +++++
+ test/handler.test.js  | 17 +++++++++++++++++
+ 6 files changed, 74 insertions(+), 2 deletions(-)
+
+diff --git a/api/_lib/config.js b/api/_lib/config.js
+index b906a70..aaa5a7c 100644
+--- a/api/_lib/config.js
++++ b/api/_lib/config.js
+@@ -1,6 +1,7 @@
+ const DASHBOARD_SELECT_COLUMNS = [
+   'snapshot_time',
+   'pushed_at',
++  'is_final',
+   'total_generation',
+   'total_consumption',
+   'difference',
+diff --git a/api/_lib/despike.js b/api/_lib/despike.js
+index d94bdbd..8f6ca7f 100644
+--- a/api/_lib/despike.js
++++ b/api/_lib/despike.js
+@@ -1,7 +1,7 @@
+ // Removes isolated spikes from dashboard rows without needing any Excel/DB change.
+ // A value is a "lone spike" when it is far from BOTH neighbours while those two
+ // neighbours agree with each other. A real step change (neighbours disagree) is kept.
+-// The newest and oldest rows are never altered. Rows with the same snapshot time are
++// The newest and oldest rows, and rows marked is_final = true, are never altered. Rows with the same snapshot time are
+ // collapsed to the most recently pushed one.
+ 
+ const NUMERIC_COLUMNS = [
+@@ -54,6 +54,7 @@ function despike(rowsDesc, options = readOptions(), timeColumn = 'snapshot_time'
+   // 2. repair lone spikes, judged against the ORIGINAL neighbours
+   const original = asc.map(row => ({ ...row }));
+   for(let i = 1; i < asc.length - 1; i++){
++    if(asc[i].is_final === true) continue;      // settled rows are trusted as they are
+     let repairedTotals = false;
+     for(const col of NUMERIC_COLUMNS){
+       const a = toNumber(original[i - 1][col]);
+diff --git a/api/dashboard-data.js b/api/dashboard-data.js
+index afe25d9..2582e0c 100644
+--- a/api/dashboard-data.js
++++ b/api/dashboard-data.js
+@@ -27,7 +27,15 @@ module.exports = async (req, res) => {
+       params.set(config.supabaseTimeColumn, `gte.${since}`);
+     }
+ 
+-    const upstream = await fetchSupabase(config, `?${params.toString()}`);
++    let upstream = await fetchSupabase(config, `?${params.toString()}`);
++    if(!upstream.ok && upstream.status === 400){
++      // is_final column not created yet (provisional/final SQL not run): retry without it
++      const detail = await upstream.clone().text();
++      if(detail.includes('is_final')){
++        params.set('select', config.selectColumns.filter(col => col !== 'is_final').join(','));
++        upstream = await fetchSupabase(config, `?${params.toString()}`);
++      }
++    }
+     if(!upstream.ok){
+       const text = await upstream.text();
+       return sendJson(res, upstream.status, { error:'Upstream data request failed', detail:text.slice(0, 300) });
+diff --git a/index.html b/index.html
+index 132d9e5..d4f2116 100644
+--- a/index.html
++++ b/index.html
+@@ -4233,6 +4233,7 @@ function mapRows(rows){
+     labels: rows.map(row=>timeOnly(pickTime(row))),
+     labels_date: rows.map(row=>dateOnly(pickTime(row))),
+     _fullTimes: rows.map(row=>pickTime(row)),
++    _isFinal: rows.map(row=>row.is_final === true),
+     total_gen: rows.map(row=>pick(row,'total_generation','total_gen')),
+     total_con: rows.map(row=>pick(row,'total_consumption','total_con')),
+     diff: rows.map(row=>pick(row,'difference','balance','diff')),
+@@ -4526,6 +4527,7 @@ function scrubLiveDashboardData(){
+   RAW.end_dt = '--';
+   RAW.total_points = 0;
+   RAW._fullTimes = [];
++  RAW._isFinal = [];
+   LIVE_RAW_BASE = null;
+   filteredLabels = [];
+   KEYS.forEach(key=>{
+@@ -5284,6 +5286,44 @@ function buildDisplaySeries(rawValues, profileKey='flow'){
+   return display;
+ }
+ 
++// Shades the trailing "live / settling" part of the trend: points after the last settled (final) row.
++Chart.register({
++  id:'provisionalBand',
++  beforeDatasetsDraw(chart){
++    try {
++      if(chart.config.type !== 'line') return;
++      const flags = RAW._isFinal;
++      if(!Array.isArray(flags) || !flags.some(Boolean)) return;          // old data without is_final: nothing to show
++      if(!filteredLabels || !chart.data.labels || chart.data.labels.length !== filteredLabels.length) return;
++      const xScale = chart.scales && chart.scales.x;
++      if(!xScale || !chart.chartArea) return;
++      let lastFinal = -1;
++      for(let i = Math.min(flags.length - 1, filteredStartIndex + filteredLabels.length - 1); i >= filteredStartIndex; i--){
++        if(flags[i]){ lastFinal = i; break; }
++      }
++      const first = (lastFinal === -1 ? filteredStartIndex : lastFinal + 1) - filteredStartIndex;
++      if(first >= filteredLabels.length) return;                          // everything visible is final
++      const area = chart.chartArea;
++      const x0 = Math.max(area.left, xScale.getPixelForValue(Math.max(0, first - 0.5)));
++      const ctx = chart.ctx;
++      ctx.save();
++      ctx.fillStyle = 'rgba(245,158,11,0.10)';
++      ctx.fillRect(x0, area.top, area.right - x0, area.bottom - area.top);
++      ctx.strokeStyle = 'rgba(245,158,11,0.55)';
++      ctx.setLineDash([4,3]);
++      ctx.beginPath(); ctx.moveTo(x0, area.top); ctx.lineTo(x0, area.bottom); ctx.stroke();
++      if(area.right - x0 > 70){
++        ctx.setLineDash([]);
++        ctx.fillStyle = 'rgba(245,158,11,0.9)';
++        ctx.font = '600 10px DM Sans, sans-serif';
++        ctx.textAlign = 'left';
++        ctx.fillText('LIVE · settling', x0 + 6, area.top + 12);
++      }
++      ctx.restore();
++    } catch(err){ /* never break charts because of the band */ }
++  }
++});
++
+ function makeDisplayDataset(baseConfig, rawValues, profileKey='flow'){
+   const raw = cloneNumericSeries(rawValues);
+   return {
+diff --git a/test/despike.test.js b/test/despike.test.js
+index e511df1..c2f5e83 100644
+--- a/test/despike.test.js
++++ b/test/despike.test.js
+@@ -44,4 +44,9 @@ assert.strictEqual(despike(desc([mk(0,1,1), mk(2,2,2)]), opts).length, 2);
+ const withNull = desc([mk(0,100000,90000), { ...mk(2,400000,90000), total_generation: null }, mk(4,100500,90000)]);
+ assert.strictEqual(despike(withNull, opts)[1].total_generation, null);
+ despike(src, opts); assert.strictEqual(src[1].total_generation, 400000);
++// rows marked is_final are never changed, provisional neighbours still are
++const fin = desc([mk(0,100000,90000), { ...mk(2,400000,90000), is_final: true }, mk(4,100500,90000)]);
++assert.strictEqual(despike(fin, opts)[1].total_generation, 400000);
++const prov = desc([mk(0,100000,90000), { ...mk(2,400000,90000), is_final: false }, mk(4,100500,90000)]);
++assert.strictEqual(despike(prov, opts)[1].total_generation, 100500);
+ console.log('despike: all tests passed');
+diff --git a/test/handler.test.js b/test/handler.test.js
+index 54df8b9..d46b619 100644
+--- a/test/handler.test.js
++++ b/test/handler.test.js
+@@ -13,3 +13,20 @@ handler({ method: 'GET', url: '/api/dashboard-data?minutes=60' }, res).then(() =
+   assert.deepStrictEqual(body.rows.map(r => r.total_generation), [100500, 101000, 101000, 100000]);
+   console.log('handler: spike removed from API response, newest-first order kept');
+ });
++
++// fallback when the is_final column does not exist yet
++const calls = [];
++global.fetch = async (url) => {
++  calls.push(String(url));
++  if(String(url).includes('is_final')) return { ok:false, status:400, clone(){ return this; }, text: async () => '{"message":"column h2_material_balance.is_final does not exist"}' };
++  return { ok:true, json: async () => [row(4, 100500), row(2, 101000), row(0, 100000)] };
++};
++setTimeout(() => {
++  let body2; const res2 = { setHeader() {}, end(b) { body2 = JSON.parse(b); } };
++  handler({ method: 'GET', url: '/api/dashboard-data' }, res2).then(() => {
++    assert.strictEqual(calls.length, 2);
++    assert.ok(!calls[1].includes('is_final'));
++    assert.strictEqual(body2.rows.length, 3);
++    console.log('handler: falls back when is_final column is missing');
++  });
++}, 50);
+-- 
+2.43.0
+
