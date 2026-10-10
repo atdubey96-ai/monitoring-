@@ -13,3 +13,20 @@ handler({ method: 'GET', url: '/api/dashboard-data?minutes=60' }, res).then(() =
   assert.deepStrictEqual(body.rows.map(r => r.total_generation), [100500, 101000, 101000, 100000]);
   console.log('handler: spike removed from API response, newest-first order kept');
 });
+
+// fallback when the is_final column does not exist yet
+const calls = [];
+global.fetch = async (url) => {
+  calls.push(String(url));
+  if(String(url).includes('is_final')) return { ok:false, status:400, clone(){ return this; }, text: async () => '{"message":"column h2_material_balance.is_final does not exist"}' };
+  return { ok:true, json: async () => [row(4, 100500), row(2, 101000), row(0, 100000)] };
+};
+setTimeout(() => {
+  let body2; const res2 = { setHeader() {}, end(b) { body2 = JSON.parse(b); } };
+  handler({ method: 'GET', url: '/api/dashboard-data' }, res2).then(() => {
+    assert.strictEqual(calls.length, 2);
+    assert.ok(!calls[1].includes('is_final'));
+    assert.strictEqual(body2.rows.length, 3);
+    console.log('handler: falls back when is_final column is missing');
+  });
+}, 50);

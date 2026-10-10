@@ -44,4 +44,9 @@ assert.strictEqual(despike(desc([mk(0,1,1), mk(2,2,2)]), opts).length, 2);
 const withNull = desc([mk(0,100000,90000), { ...mk(2,400000,90000), total_generation: null }, mk(4,100500,90000)]);
 assert.strictEqual(despike(withNull, opts)[1].total_generation, null);
 despike(src, opts); assert.strictEqual(src[1].total_generation, 400000);
+// rows marked is_final are never changed, provisional neighbours still are
+const fin = desc([mk(0,100000,90000), { ...mk(2,400000,90000), is_final: true }, mk(4,100500,90000)]);
+assert.strictEqual(despike(fin, opts)[1].total_generation, 400000);
+const prov = desc([mk(0,100000,90000), { ...mk(2,400000,90000), is_final: false }, mk(4,100500,90000)]);
+assert.strictEqual(despike(prov, opts)[1].total_generation, 100500);
 console.log('despike: all tests passed');

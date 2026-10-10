@@ -1,7 +1,7 @@
 // Removes isolated spikes from dashboard rows without needing any Excel/DB change.
 // A value is a "lone spike" when it is far from BOTH neighbours while those two
 // neighbours agree with each other. A real step change (neighbours disagree) is kept.
-// The newest and oldest rows are never altered. Rows with the same snapshot time are
+// The newest and oldest rows, and rows marked is_final = true, are never altered. Rows with the same snapshot time are
 // collapsed to the most recently pushed one.
 
 const NUMERIC_COLUMNS = [
@@ -54,6 +54,7 @@ function despike(rowsDesc, options = readOptions(), timeColumn = 'snapshot_time'
   // 2. repair lone spikes, judged against the ORIGINAL neighbours
   const original = asc.map(row => ({ ...row }));
   for(let i = 1; i < asc.length - 1; i++){
+    if(asc[i].is_final === true) continue;      // settled rows are trusted as they are
     let repairedTotals = false;
     for(const col of NUMERIC_COLUMNS){
       const a = toNumber(original[i - 1][col]);

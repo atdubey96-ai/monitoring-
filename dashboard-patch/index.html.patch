@@ -1,0 +1,65 @@
+diff --git a/index.html b/index.html
+index 132d9e5..d4f2116 100644
+--- a/index.html
++++ b/index.html
+@@ -4233,6 +4233,7 @@ function mapRows(rows){
+     labels: rows.map(row=>timeOnly(pickTime(row))),
+     labels_date: rows.map(row=>dateOnly(pickTime(row))),
+     _fullTimes: rows.map(row=>pickTime(row)),
++    _isFinal: rows.map(row=>row.is_final === true),
+     total_gen: rows.map(row=>pick(row,'total_generation','total_gen')),
+     total_con: rows.map(row=>pick(row,'total_consumption','total_con')),
+     diff: rows.map(row=>pick(row,'difference','balance','diff')),
+@@ -4526,6 +4527,7 @@ function scrubLiveDashboardData(){
+   RAW.end_dt = '--';
+   RAW.total_points = 0;
+   RAW._fullTimes = [];
++  RAW._isFinal = [];
+   LIVE_RAW_BASE = null;
+   filteredLabels = [];
+   KEYS.forEach(key=>{
+@@ -5284,6 +5286,44 @@ function buildDisplaySeries(rawValues, profileKey='flow'){
+   return display;
+ }
+ 
++// Shades the trailing "live / settling" part of the trend: points after the last settled (final) row.
++Chart.register({
++  id:'provisionalBand',
++  beforeDatasetsDraw(chart){
++    try {
++      if(chart.config.type !== 'line') return;
++      const flags = RAW._isFinal;
++      if(!Array.isArray(flags) || !flags.some(Boolean)) return;          // old data without is_final: nothing to show
++      if(!filteredLabels || !chart.data.labels || chart.data.labels.length !== filteredLabels.length) return;
++      const xScale = chart.scales && chart.scales.x;
++      if(!xScale || !chart.chartArea) return;
++      let lastFinal = -1;
++      for(let i = Math.min(flags.length - 1, filteredStartIndex + filteredLabels.length - 1); i >= filteredStartIndex; i--){
++        if(flags[i]){ lastFinal = i; break; }
++      }
++      const first = (lastFinal === -1 ? filteredStartIndex : lastFinal + 1) - filteredStartIndex;
++      if(first >= filteredLabels.length) return;                          // everything visible is final
++      const area = chart.chartArea;
++      const x0 = Math.max(area.left, xScale.getPixelForValue(Math.max(0, first - 0.5)));
++      const ctx = chart.ctx;
++      ctx.save();
++      ctx.fillStyle = 'rgba(245,158,11,0.10)';
++      ctx.fillRect(x0, area.top, area.right - x0, area.bottom - area.top);
++      ctx.strokeStyle = 'rgba(245,158,11,0.55)';
++      ctx.setLineDash([4,3]);
++      ctx.beginPath(); ctx.moveTo(x0, area.top); ctx.lineTo(x0, area.bottom); ctx.stroke();
++      if(area.right - x0 > 70){
++        ctx.setLineDash([]);
++        ctx.fillStyle = 'rgba(245,158,11,0.9)';
++        ctx.font = '600 10px DM Sans, sans-serif';
++        ctx.textAlign = 'left';
++        ctx.fillText('LIVE · settling', x0 + 6, area.top + 12);
++      }
++      ctx.restore();
++    } catch(err){ /* never break charts because of the band */ }
++  }
++});
++
+ function makeDisplayDataset(baseConfig, rawValues, profileKey='flow'){
+   const raw = cloneNumericSeries(rawValues);
+   return {

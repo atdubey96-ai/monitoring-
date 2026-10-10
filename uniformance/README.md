@@ -1,5 +1,8 @@
 # Uniformance → Supabase: push only SETTLED data
 
+> **Current recommended design: see `PROVISIONAL_FINAL_SETUP.md`** (live + final rows). The sections below
+> describe the first iteration (settle gate, single lag); the Supabase/Excel parts it describes are still used.
+
 ## Why spikes reach the dashboard
 In `Uniformance_Push_DATA.xlsm`:
 

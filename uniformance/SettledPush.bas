@@ -24,6 +24,9 @@ Private Const JUMP_FRAC    As Double = 0.25   ' step in Total Gen/Con that needs
 Private Const CONFIRM_FRAC As Double = 0.05   ' two cycles within 5 % = a real shift
 Private Const MAX_HOLDS    As Long = 3        ' after this many unsettled cycles push anyway
 Private Const CLOCK_CELL   As String = "M1"     ' cycle clock: Sheet1!D1 reads this instead of NOW()
+Private Const LAG_CELL     As String = "N1"     ' lag in minutes: Sheet1!D1 reads this too
+Private Const LIVE_LAG_MIN  As Long = 2        ' provisional (live) pass reads data this many min old
+Private Const FINAL_LAG_MIN As Long = 30       ' final pass reads data this many min old (>= Uniformance delay)
 ' ----------------------------------------
 
 Private haveLast   As Boolean
@@ -97,6 +100,26 @@ Public Function WaitForSettledData(ByRef msg As String) As Boolean
     End If
     WaitForSettledData = True
 End Function
+
+' ---------------------------------------------------------------
+'  Two-pass cycle (called from Module1.PushNow)
+' ---------------------------------------------------------------
+' FINAL pass: old data (FINAL_LAG_MIN) that has had time to arrive, with the settle gate.
+Public Function PrepareFinal(ByRef msg As String) As Boolean
+    ThisWorkbook.Sheets(SHEET_NAME).Range(LAG_CELL).Value = FINAL_LAG_MIN
+    PrepareFinal = WaitForSettledData(msg)
+End Function
+
+' LIVE pass: newest data (LIVE_LAG_MIN), one refresh, no gate. Marked provisional in Supabase.
+' Leaves the sheet showing live values.
+Public Sub PrepareLive()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets(SHEET_NAME)
+    ' keep the cycle clock written by the final pass, so live buckets line up with final buckets
+    If ws.Range(CLOCK_CELL).HasFormula Then ws.Range(CLOCK_CELL).Value = Now
+    ws.Range(LAG_CELL).Value = LIVE_LAG_MIN
+    ForceRefresh
+End Sub
 
 ' Re-run every PHDGetData call. CalculateFull is needed because with
 ' an unchanged time window Excel would otherwise reuse the cached

@@ -27,7 +27,15 @@ module.exports = async (req, res) => {
       params.set(config.supabaseTimeColumn, `gte.${since}`);
     }
 
-    const upstream = await fetchSupabase(config, `?${params.toString()}`);
+    let upstream = await fetchSupabase(config, `?${params.toString()}`);
+    if(!upstream.ok && upstream.status === 400){
+      // is_final column not created yet (provisional/final SQL not run): retry without it
+      const detail = await upstream.clone().text();
+      if(detail.includes('is_final')){
+        params.set('select', config.selectColumns.filter(col => col !== 'is_final').join(','));
+        upstream = await fetchSupabase(config, `?${params.toString()}`);
+      }
+    }
     if(!upstream.ok){
       const text = await upstream.text();
       return sendJson(res, upstream.status, { error:'Upstream data request failed', detail:text.slice(0, 300) });
