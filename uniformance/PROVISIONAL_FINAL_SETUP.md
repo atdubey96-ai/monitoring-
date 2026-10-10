@@ -12,9 +12,11 @@ The dashboard always shows the live edge, shaded amber "LIVE - settling", and it
 values ~30 min later. A provisional push can never overwrite a final row (database guard), and
 lone spikes in provisional rows are repaired by the median trigger; final rows are never touched.
 
-## ORDER (important)
-1. Supabase SQL (3 files)  ->  2. Excel  ->  3. Dashboard.
-Do the Excel part only AFTER the SQL, otherwise the H2 push is rejected (`ERR 400`, unknown column `is_final`).
+## ORDER
+You can do the Excel part FIRST. `H2Push.bas` has a switch `SQL_READY = False` (top of the module): until the three SQL
+files have been run in Supabase it only sends the settled (30-min-old) row as a plain insert, exactly like the old push,
+and skips the live row (K1 shows `LIVE skipped`). After the SQL is done, change that one word to `True`.
+Then: Supabase SQL (3 files) -> set `SQL_READY = True` -> dashboard patch.
 
 ## 1. Supabase (SQL editor, in this order, test on a copy first)
 1. `supabase_migration.sql`

@@ -5,7 +5,7 @@ Attribute VB_Name = "H2Push"
 '          h2_material_balance as ONE row per snapshot_time:
 '              isFinal = False -> provisional live row
 '              isFinal = True  -> settled row, overwrites the provisional one
-'          Returns the HTTP status (201/200 = ok, <0 = VBA/network error).
+'          Returns the HTTP status (201/200 = ok, 0 = skipped, <0 = VBA/network error).
 '
 ' SETUP (30 seconds): copy the SUPABASE_URL and SUPABASE_KEY lines from Module1
 '          and paste them over the two lines marked PASTE below.
@@ -16,6 +16,11 @@ Private Const SUPABASE_URL As String = "PASTE_URL_FROM_MODULE1"            ' <--
 Private Const SUPABASE_KEY As String = "PASTE_KEY_FROM_MODULE1"            ' <-- PASTE
 Private Const TABLE_NAME   As String = "h2_material_balance"
 Private Const PROXY_SERVER As String = "refproxy:8080"
+
+' SWITCH: leave False until supabase_provisional_final.sql (and the two SQL files before it) have been
+' run in Supabase. False = old behaviour (settled row only, plain insert, no is_final).
+' Change to True after the SQL is done -> full provisional + final mode.
+Private Const SQL_READY As Boolean = False
 
 Public LastError As String
 
@@ -31,6 +36,11 @@ Public Function Push(ByVal isFinal As Boolean) As Long
         Exit Function
     End If
 
+    If Not SQL_READY And Not isFinal Then
+        Push = 0                                  ' live row not sent until Supabase is prepared
+        Exit Function
+    End If
+
     Set ws = ThisWorkbook.Sheets("Sheet1")
     Dim rawDate As Date
     rawDate = CDate(ws.Range("H20").Value)
@@ -38,7 +48,7 @@ Public Function Push(ByVal isFinal As Boolean) As Long
 
     sBody = "{" & _
         """snapshot_time"":""" & sTimestamp & """," & _
-        """is_final"":" & IIf(isFinal, "true", "false") & "," & _
+        IIf(SQL_READY, """is_final"":" & IIf(isFinal, "true", "false") & ",", "") & _
         """total_generation"":" & N(ws.Range("H21").Value) & "," & _
         """total_consumption"":" & N(ws.Range("H22").Value) & "," & _
         """difference"":" & N(ws.Range("H23").Value) & "," & _
@@ -66,11 +76,11 @@ Public Function Push(ByVal isFinal As Boolean) As Long
 
     Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
     http.setProxy 2, PROXY_SERVER
-    http.Open "POST", SUPABASE_URL & "/rest/v1/" & TABLE_NAME & "?on_conflict=snapshot_time", False
+    http.Open "POST", SUPABASE_URL & "/rest/v1/" & TABLE_NAME & IIf(SQL_READY, "?on_conflict=snapshot_time", ""), False
     http.setRequestHeader "Content-Type", "application/json"
     http.setRequestHeader "apikey", SUPABASE_KEY
     http.setRequestHeader "Authorization", "Bearer " & SUPABASE_KEY
-    http.setRequestHeader "Prefer", "resolution=merge-duplicates,return=minimal"
+    http.setRequestHeader "Prefer", IIf(SQL_READY, "resolution=merge-duplicates,return=minimal", "return=minimal")
     http.send sBody
 
     Push = http.Status
@@ -89,6 +99,7 @@ End Function
 ' Short text for the K1 status line
 Public Function Result(ByVal status As Long) As String
     Select Case status
+        Case 0:             Result = "skipped"
         Case 200, 201, 204: Result = "ok"
         Case -2:            Result = "SETUP"
         Case Else:          Result = "ERR " & status
