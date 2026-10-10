@@ -18,7 +18,7 @@ In `Uniformance_Push_DATA.xlsm`:
    consecutive settled cycles before it is pushed.
 4. **Idempotent upsert** per `snapshot_time` in Supabase, so a re-push overwrites, never duplicates.
 
-## Install (≈10 min, Excel closed on the other PC first)
+## Install (≈10 min). Stop auto-sync first (run `StopAutoSync`) and keep a backup copy of the .xlsm
 
 ### A. Formulas (workbook)
 | Cell | Old | New |
@@ -92,3 +92,25 @@ the gate makes sure it is never worse than that.
 This was written without access to Excel/PHD, so it has **not** been run. Test with the workbook
 open for 15–20 min and watch `Sheet1!K1`: you should see `OK … settled in 2 reads` mostly.
 Back up the `.xlsm` first.
+
+---
+# Checklists
+
+## Do at the office PC (no GitHub needed)
+1. Back up `Uniformance_Push_DATA.xlsm`; run `StopAutoSync`.
+2. **Supabase SQL editor** (on a *copy* of the table first if you can):
+   1. `supabase_migration.sql` (unique `snapshot_time`)
+   2. `supabase_spike_filter.sql` (raw log + repair trigger + clean view)
+3. **Excel** step A (formulas) and step B (VBA) above. Set `SYNC_INTERVAL_MIN = 2`.
+4. Run `StartAutoSync`; for 15-20 min watch `Sheet1!K1` (`OK ... settled in 2 reads`).
+   Occasional `HOLD` lines are normal; if it holds every cycle, raise the lag (`5/1440` to `8/1440`).
+5. Open the dashboard and check the trend has no isolated spikes.
+
+## Do later from the personal Mac
+1. Create an empty private GitHub repo `h2-balance-dashboard`, push the project, install the Claude
+   GitHub App on it (write access), connect it in Vercel (Project > Settings > Git).
+2. Apply `dashboard-patch/` (server-side de-spike in `/api/dashboard-data`) or let Claude open a PR.
+3. Optional: point `SUPABASE_TABLE` in Vercel at `h2_material_balance_clean`.
+
+Order matters a little: the SQL (step 2) before the Excel upsert edit (`on_conflict=snapshot_time`),
+because that upsert needs the unique index.
