@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the three H2 SQL files against Supabase through the Management API (HTTPS only).
+"""Run the H2 SQL files against Supabase through the Management API (HTTPS only).
 
 Needs env vars:  SUPABASE_ACCESS_TOKEN   (Supabase > Account > Access Tokens)
 Optional:        SUPABASE_PROJECT_REF    (default mozuuowwdfyqqvpiyetk)
@@ -11,7 +11,7 @@ import json, os, sys, urllib.request, urllib.error
 REF = os.environ.get("SUPABASE_PROJECT_REF", "mozuuowwdfyqqvpiyetk")
 TOKEN = os.environ.get("SUPABASE_ACCESS_TOKEN", "")
 HERE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uniformance")
-FILES = ["supabase_migration.sql", "supabase_spike_filter.sql", "supabase_provisional_final.sql"]
+FILES = ["supabase_spike_filter.sql", "supabase_provisional_final.sql", "supabase_upsert_guard.sql"]
 BACKUP = "CREATE TABLE IF NOT EXISTS public.h2_material_balance_backup_20261010 AS TABLE public.h2_material_balance;"
 VERIFY = [
     "select is_final, count(*) from public.h2_material_balance group by 1 order by 1",

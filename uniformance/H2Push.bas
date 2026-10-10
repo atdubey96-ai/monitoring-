@@ -17,8 +17,8 @@ Private Const SUPABASE_KEY As String = "PASTE_KEY_FROM_MODULE1"            ' <--
 Private Const TABLE_NAME   As String = "h2_material_balance"
 Private Const PROXY_SERVER As String = "refproxy:8080"
 
-' SWITCH: leave False until supabase_provisional_final.sql (and the two SQL files before it) have been
-' run in Supabase. False = old behaviour (settled row only, plain insert, no is_final).
+' SWITCH: leave False until the Supabase SQL (spike filter, provisional/final, upsert guard) has been
+' applied. (Applied on 10-Oct-2026: you can set it to True.) False = old behaviour (settled row only, plain insert, no is_final).
 ' Change to True after the SQL is done -> full provisional + final mode.
 Private Const SQL_READY As Boolean = False
 
@@ -81,11 +81,11 @@ Public Function Push(ByVal isFinal As Boolean) As Long
 
     Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
     http.setProxy 2, PROXY_SERVER
-    http.Open "POST", SUPABASE_URL & "/rest/v1/" & TABLE_NAME & IIf(SQL_READY, "?on_conflict=snapshot_time", ""), False
+    http.Open "POST", SUPABASE_URL & "/rest/v1/" & TABLE_NAME, False   ' plain insert: a database trigger turns duplicates into updates
     http.setRequestHeader "Content-Type", "application/json"
     http.setRequestHeader "apikey", SUPABASE_KEY
     http.setRequestHeader "Authorization", "Bearer " & SUPABASE_KEY
-    http.setRequestHeader "Prefer", IIf(SQL_READY, "resolution=merge-duplicates,return=minimal", "return=minimal")
+    http.setRequestHeader "Prefer", "return=minimal"
     http.send sBody
 
     Push = http.Status

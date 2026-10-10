@@ -18,10 +18,14 @@ files have been run in Supabase it only sends the settled (30-min-old) row as a 
 and skips the live row (K1 shows `LIVE skipped`). After the SQL is done, change that one word to `True`.
 Then: Supabase SQL (3 files) -> set `SQL_READY = True` -> dashboard patch.
 
-## 1. Supabase (SQL editor, in this order, test on a copy first)
-1. `supabase_migration.sql`
-2. `supabase_spike_filter.sql`
-3. `supabase_provisional_final.sql`   (safe to re-run)
+## 1. Supabase (APPLIED on 10-Oct-2026 through the Supabase connector)
+Applied to project `mozuuowwdfyqqvpiyetk`: backup table `h2_material_balance_backup_20261010`, column `is_final`, raw log
+`h2_material_balance_raw`, spike-repair / final-guard / raw-log triggers, view `h2_material_balance_clean`, the
+duplicate absorber and the old-pusher classifier. SQL source files (run in this order if it ever has to be rebuilt):
+`supabase_spike_filter.sql`, `supabase_provisional_final.sql`, `supabase_upsert_guard.sql`.
+Deliberately NOT done: deleting the 109 old duplicate timestamps and adding a unique index (not needed: a trigger absorbs
+duplicates, so Excel uses a plain insert). `supabase_migration.sql` is therefore optional/obsolete.
+Rows from a second, old-style PC (timestamps off the 2-minute grid) are stored as provisional and spike-repaired.
 
 ## 2. Excel
 1. `StopAutoSync`. Back up the file.
@@ -30,7 +34,7 @@ Then: Supabase SQL (3 files) -> set `SQL_READY = True` -> dashboard patch.
    `Sheet1!D3` uses `"2m"`, `UNIFORMANCE!D4` uses `"2m"` (already done).
 3. VBA editor (Alt+F11):
    * Remove the old `SettledPush` module and import the new `SettledPush.bas`.
-   * Import `H2Push.bas`. Open it and paste the `SUPABASE_URL` and `SUPABASE_KEY` lines from Module1 over the two
+   * Import the latest `H2Push.bas` (plain insert, no `on_conflict`). Open it and paste the `SUPABASE_URL` and `SUPABASE_KEY` lines from Module1 over the two
      `PASTE` lines (copy them in Excel; do not retype the key).
    * Module1: replace the whole `Sub PushNow() ... End Sub` with the text in `Module1_PushNow.txt`.
      In `Sub ManualSync` change `PushH2Balance.PushH2Balance` to `H2Push.Push True`.
