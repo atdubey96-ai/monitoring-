@@ -1,7 +1,8 @@
 /* H2 dashboard add-on (loaded after the main page script).
    Smarter y-axis auto-scale for the trend charts:
    - fits the axis to the full data range (nothing clipped), with a grid step that suits the range;
-   - picks the grid step to suit the range (the page's fixed 2000 step is kept only when it gives 5-14 gridlines).
+   - picks a fine grid step (about 14 labelled y values; the page's fixed step is kept only when it gives 10-20);
+   - draws faint minor gridlines on both axes (y: 5 per step, x: 4 between time labels).
    Disable with ?noenhance=1 in the URL. */
 (function(){
   'use strict';
@@ -15,7 +16,7 @@
     return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
   }
   function niceStep(range){
-    var rough = Math.max(Math.abs(range), 1e-9) / 8;
+    var rough = Math.max(Math.abs(range), 1e-9) / 14;      // about 14 labelled gridlines
     var mag = Math.pow(10, Math.floor(Math.log10(rough)));
     var n = rough / mag;
     return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * mag;
@@ -34,7 +35,7 @@
     if(cfg.includeZero){ lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
     var range = Math.max(hi - lo, 1e-9);
     var step = niceStep(range);
-    if(cfg.step && range / cfg.step >= 5 && range / cfg.step <= 14) step = cfg.step;
+    if(cfg.step && range / cfg.step >= 10 && range / cfg.step <= 20) step = cfg.step;
 
     var min = lo, max = hi;
     if(min === max){ min -= step * 2; max += step * 2; } else { min -= step * 0.5; max += step * 0.5; }
@@ -44,6 +45,53 @@
     if(chartMin === chartMax) chartMax = chartMin + step;
     return { min: chartMin, max: chartMax, step: step };
   };
+
+
+  // faint minor gridlines between the labelled ones, on both axes
+  if(window.Chart && Chart.register){
+    Chart.register({
+      id: 'h2MinorGrid',
+      beforeDatasetsDraw: function(chart){
+        try {
+          var a = chart.chartArea, xs = chart.scales && chart.scales.x, ys = chart.scales && chart.scales.y;
+          if(!a || !xs || !ys || !chart.config || chart.config.type !== 'line') return;
+          var ctx = chart.ctx;
+          ctx.save();
+          ctx.beginPath(); ctx.rect(a.left, a.top, a.right - a.left, a.bottom - a.top); ctx.clip();
+          ctx.strokeStyle = 'rgba(120,145,175,0.12)'; ctx.lineWidth = 1;
+          ctx.beginPath();
+          var vals = (ys.ticks || []).map(function(t){ return t.value; }).filter(function(v){ return isFinite(v); }).sort(function(p, q){ return p - q; });
+          if(vals.length >= 2){
+            var step = vals[1] - vals[0];
+            var mant = step / Math.pow(10, Math.floor(Math.log10(Math.abs(step) || 1)));
+            var n = Math.abs(mant - 2) < 0.01 ? 4 : 5;
+            for(var i = -1; i < vals.length; i++){
+              for(var k = 1; k < n; k++){
+                var v = (i < 0 ? vals[0] - step : vals[i]) + step * k / n;
+                if(v <= ys.min || v >= ys.max) continue;
+                var py = Math.round(ys.getPixelForValue(v)) + 0.5;
+                ctx.moveTo(a.left, py); ctx.lineTo(a.right, py);
+              }
+            }
+          }
+          var px = [];
+          (xs.ticks || []).forEach(function(t){
+            if(t.label === null || t.label === undefined || t.label === '') return;
+            var p = xs.getPixelForValue(t.value);
+            if(isFinite(p) && (!px.length || Math.abs(p - px[px.length - 1]) > 1)) px.push(p);
+          });
+          for(var j = 0; j + 1 < px.length; j++){
+            for(var m = 1; m < 5; m++){
+              var x = Math.round(px[j] + (px[j + 1] - px[j]) * m / 5) + 0.5;
+              ctx.moveTo(x, a.top); ctx.lineTo(x, a.bottom);
+            }
+          }
+          ctx.stroke();
+          ctx.restore();
+        } catch(e){}
+      }
+    });
+  }
 
   // note for points that fall outside the fitted axis
   if(window.Chart && Chart.register){
