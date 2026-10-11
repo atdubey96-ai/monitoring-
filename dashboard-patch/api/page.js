@@ -55,34 +55,22 @@ const LOGIN_HTML = `<!doctype html>
   #err{min-height:18px;margin-top:12px;color:#c62839;font-size:13px}
 </style></head>
 <body>
-<form id="f" autocomplete="on">
+<form id="f" method="POST" action="/api/login" autocomplete="on">
   <h1>H&#8322; Balance</h1><p>Indian Oil Corporation Ltd. &middot; secure sign-in</p>
   <label for="u">User ID</label><input id="u" name="username" autocomplete="username" required autofocus>
   <label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password" required>
-  <button id="b" type="submit">Sign in</button><div id="err" role="alert"></div>
+  <button id="b" type="submit">Sign in</button><div id="err" role="alert">__ERR__</div>
 </form>
 <script>
 document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
 // clear any old offline copy / service worker from earlier versions
 try { if(navigator.serviceWorker){ navigator.serviceWorker.getRegistrations().then(function(rs){ rs.forEach(function(r){ r.unregister(); }); }); }
       if(window.caches){ caches.keys().then(function(ks){ ks.forEach(function(k){ caches.delete(k); }); }); } } catch(e){}
-document.getElementById('f').addEventListener('submit', function(e){
-  e.preventDefault();
-  var b = document.getElementById('b'), err = document.getElementById('err');
-  function fail(msg){ err.textContent = msg; b.disabled = false; b.textContent = 'Sign in'; }
-  b.disabled = true; b.textContent = 'Signing in...'; err.textContent = '';
-  var ctl = window.AbortController ? new AbortController() : null;
-  var timer = setTimeout(function(){ if(ctl) ctl.abort(); }, 20000);
-  fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', signal: ctl ? ctl.signal : undefined,
-    body: JSON.stringify({ username: document.getElementById('u').value.trim(), password: document.getElementById('p').value }) })
-    .then(function(r){ clearTimeout(timer);
-      if(r.ok){
-        b.textContent = 'Opening dashboard...';
-        err.innerHTML = 'If the dashboard does not open in a few seconds, <a href="/?go=1">click here</a>.';
-        location.href = '/?go=' + Date.now(); return; }
-      fail(r.status === 429 ? 'Too many attempts. Please wait a few minutes.' : r.status === 403 ? 'Invalid user ID or password.' : 'Server error (' + r.status + '). Please try again.'); })
-    .catch(function(){ clearTimeout(timer); fail('No response from the server. Please check your connection and try again.'); });
+document.getElementById('f').addEventListener('submit', function(){
+  var b = document.getElementById('b'); b.textContent = 'Signing in...'; setTimeout(function(){ b.disabled = true; }, 0);
 });
+// back/forward navigation can restore this page in a frozen state: reset it
+window.addEventListener('pageshow', function(e){ if(e.persisted){ var b = document.getElementById('b'); b.disabled = false; b.textContent = 'Sign in'; } });
 </script></body></html>`;
 
 function send(res, status, body, type, extra) {
@@ -100,7 +88,13 @@ module.exports = (req, res) => {
     if (!ua || BOT_PATTERN.test(ua)) return send(res, 403, 'Forbidden', 'text/plain; charset=utf-8');
     const config = getConfig();
     const token = parseCookies(req)[SESSION_COOKIE_NAME];
-    if (!verifySessionToken(token, config.sessionSecret)) return send(res, 200, LOGIN_HTML);
+    if (!verifySessionToken(token, config.sessionSecret)) {
+      const code = new URL(req.url || '/', 'http://x').searchParams.get('e');
+      const msg = { '403': 'Invalid user ID or password.', '429': 'Too many attempts. Please wait a few minutes.', '500': 'Server error. Please try again.' }[code] || '';
+      console.info('page login', ua.slice(0, 70));
+      return send(res, 200, LOGIN_HTML.replace('__ERR__', msg));
+    }
+    console.info('page app', ua.slice(0, 70));
     return send(res, 200, loadApp());
   } catch (e) {
     console.error('page error', e);
