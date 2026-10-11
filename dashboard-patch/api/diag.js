@@ -45,6 +45,11 @@ function test(name, url, opts){
   await test('page: dashboard / login', '/');
   await test('add-on script', '/api/enhance');
   var mem = [];
+  try {
+    var es = performance.getEntriesByType('resource').filter(function(e){ return e.initiatorType === 'fetch'; });
+    es.forEach(function(e){ mem.push('net: ' + e.name.replace(location.origin, '') + ' protocol=' + (e.nextHopProtocol || '?') +
+      ' wait=' + Math.round(e.responseStart - e.requestStart) + 'ms download=' + Math.round(e.responseEnd - e.responseStart) + 'ms'); });
+  } catch(e){}
   mem.push('browser: ' + navigator.userAgent);
   mem.push('online: ' + navigator.onLine);
   try { mem.push('page controlled by service worker: ' + !!(navigator.serviceWorker && navigator.serviceWorker.controller)); } catch(e){}

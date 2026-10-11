@@ -46,6 +46,10 @@
         {
           "key": "X-DNS-Prefetch-Control",
           "value": "off"
+        },
+        {
+          "key": "Alt-Svc",
+          "value": "clear"
         }
       ]
     },
