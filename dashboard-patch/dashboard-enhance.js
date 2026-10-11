@@ -84,8 +84,9 @@
             if(isFinite(p) && (!px.length || Math.abs(p - px[px.length - 1]) > 1)) px.push(p);
           });
           for(var j = 0; j + 1 < px.length; j++){
-            for(var m = 1; m < 5; m++){
-              var x = Math.round(px[j] + (px[j + 1] - px[j]) * m / 5) + 0.5;
+            var parts = (a.right - a.left) < 520 ? 2 : 5;      // fewer vertical minor lines on a phone
+            for(var m = 1; m < parts; m++){
+              var x = Math.round(px[j] + (px[j + 1] - px[j]) * m / parts) + 0.5;
               ctx.moveTo(x, a.top); ctx.lineTo(x, a.bottom);
             }
           }
@@ -123,6 +124,33 @@
       }
     });
   }
+
+  // phones: do not print a time label right next to a date label (they overlapped, e.g. "11 Oct01:23")
+  try {
+    if(window.Chart && Chart.instances){
+      Object.keys(Chart.instances).forEach(function(id){
+        var chart = Chart.instances[id], xs = chart.options && chart.options.scales && chart.options.scales.x;
+        if(!xs || !xs.ticks || typeof xs.ticks.callback !== 'function' || xs.ticks.__h2Wrapped) return;
+        var orig = xs.ticks.callback, cacheKey = null, dateAt = null;
+        xs.ticks.callback = function(val, index, ticks){
+          var r = orig.call(this, val, index, ticks);
+          try {
+            var w = this.chart && this.chart.chartArea ? this.chart.chartArea.width : 0;
+            if(!w || w >= 520 || r === null || r === undefined || Array.isArray(r) || !ticks || ticks.length < 3) return r;
+            var key = ticks.length + ':' + w;
+            if(key !== cacheKey){
+              cacheKey = key; dateAt = [];
+              for(var i = 0; i < ticks.length; i++){ if(Array.isArray(orig.call(this, ticks[i].value, i, ticks))) dateAt.push(i); }
+            }
+            var k = Math.ceil(46 / (w / (ticks.length - 1)));
+            for(var n = 0; n < dateAt.length; n++){ if(Math.abs(dateAt[n] - index) <= k) return null; }
+          } catch(e){}
+          return r;
+        };
+        xs.ticks.__h2Wrapped = true;
+      });
+    }
+  } catch(e){}
   try { if(typeof window.updateAllCharts === 'function') window.updateAllCharts(); } catch(e){}
 })();
 
@@ -145,5 +173,18 @@
     }
     window.addEventListener('hashchange', guard);
     guard();
+  } catch(e){}
+})();
+
+/* Mobile fix: the phone bottom navigation inherited the desktop height (100vh - 40px), so it covered the whole screen as a
+   frosted sheet. Let it be only as tall as its buttons. */
+(function(){
+  'use strict';
+  if(/[?&]noenhance=1/.test(location.search)) return;
+  try {
+    var st = document.createElement('style');
+    st.textContent = '@media (max-width:780px){.sidebar{height:auto !important;max-height:none !important;}' +
+      '.sidebar-link-label .label-full{display:none !important;}.sidebar-link-label .label-short{display:inline !important;}}';
+    document.head.appendChild(st);
   } catch(e){}
 })();
