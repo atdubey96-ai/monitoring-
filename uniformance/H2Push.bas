@@ -18,9 +18,8 @@ Private Const TABLE_NAME   As String = "h2_material_balance"
 Private Const PROXY_SERVER As String = "refproxy:8080"
 
 ' SWITCH: leave False until the Supabase SQL (spike filter, provisional/final, upsert guard) has been
-' applied. (Applied on 10-Oct-2026: you can set it to True.) False = old behaviour (settled row only, plain insert, no is_final).
-' Change to True after the SQL is done -> full provisional + final mode.
-Private Const SQL_READY As Boolean = False
+' Supabase SQL already applied (10-Oct-2026): True = provisional + final mode.
+Private Const SQL_READY As Boolean = True
 
 Public LastError As String
 
