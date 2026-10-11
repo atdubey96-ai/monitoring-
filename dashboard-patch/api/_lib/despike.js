@@ -36,7 +36,8 @@ function readOptions(env = process.env){
     gridSeconds: num('H2_GRID_SECONDS', 120),
     supersedeToleranceMs: num('H2_SUPERSEDE_TOLERANCE_SEC', 240) * 1000,
     cutover: String(env.H2_CUTOVER || 'on').toLowerCase() !== 'off',
-    liveWindow: Math.max(1, Math.round(num('H2_LIVE_MEDIAN_ROWS', 5)))
+    liveWindow: Math.max(1, Math.round(num('H2_LIVE_MEDIAN_ROWS', 5))),
+    showLive: String(env.H2_SHOW_LIVE || 'off').toLowerCase() === 'on'
   };
 }
 
@@ -121,11 +122,32 @@ function smoothLiveRows(asc, options, timeColumn){
   return asc;
 }
 
+// The newest PHD values are not settled yet, so live (provisional) rows are erratic. They are overwritten by the settled
+// row a little later. Until then, keep them off the trend: hide provisional on-grid rows that are NEWER than the newest
+// settled row. (Switch on with H2_SHOW_LIVE=on or ?live=1.) Does nothing when no settled row exists yet.
+function hideUnsettledTail(rows, options, timeColumn){
+  if(options.showLive) return rows;
+  const grid = options.gridSeconds;
+  const stamp = row => Date.parse(row[timeColumn]);
+  const onGrid = t => Number.isFinite(t) && t % 1000 === 0 && (t / 1000) % grid === 0;
+  let newestFinal = -Infinity;
+  for(const row of rows){
+    const t = stamp(row);
+    if(onGrid(t) && row.is_final === true && t > newestFinal) newestFinal = t;
+  }
+  if(newestFinal === -Infinity) return rows;
+  return rows.filter(row => {
+    const t = stamp(row);
+    return !(onGrid(t) && row.is_final === false && t > newestFinal);
+  });
+}
+
 // rowsDesc: newest-first (same order Supabase returns). Returns newest-first.
 function despike(rowsDesc, options = readOptions(), timeColumn = 'snapshot_time', pushedAtColumn = 'pushed_at'){
   if(!options.enabled || !Array.isArray(rowsDesc) || rowsDesc.length === 0) return rowsDesc;
   rowsDesc = dropSupersededRows(rowsDesc, options, timeColumn);
   rowsDesc = dropLegacyAfterCutover(rowsDesc, options, timeColumn);
+  rowsDesc = hideUnsettledTail(rowsDesc, options, timeColumn);
 
   // 1. one row per snapshot time (keep the most recently pushed)
   const byTime = new Map();

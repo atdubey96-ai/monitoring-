@@ -89,14 +89,17 @@ const at = (min, sec, gen, fin) => ({ snapshot_time: `2026-10-10T10:${String(min
   for (let m = 0; m < 10; m += 2) rows.push(row(iso(7, m, 0), true, 100000));
   rows.push(row(iso(8, 0, 3), false, 40000), row(iso(8, 5, 12), false, 190000)); // old-style rows inside a gap: dropped
   [100000, 100000, 140000, 60000, 100200].forEach((g, i) => rows.push(row(iso(9, i * 2, 0), false, g))); // live rows
-  const out = despike(rows.sort((a, b) => b.snapshot_time.localeCompare(a.snapshot_time)), readOptions({}));
+  const sorted = rows.sort((a, b) => b.snapshot_time.localeCompare(a.snapshot_time));
+  const hidden = despike(sorted, readOptions({}));
+  assert.ok(!hidden.some(r => r.snapshot_time.startsWith('2026-10-11T09')), 'unsettled tail hidden by default');
+  const out = despike(sorted, readOptions({ H2_SHOW_LIVE: 'on' }));
   assert.ok(out.some(r => r.total_generation === 30000));
   assert.ok(!out.some(r => r.total_generation === 40000 || r.total_generation === 190000));
   const live = out.filter(r => r.snapshot_time.startsWith('2026-10-11T09')).map(r => r.total_generation).reverse();
   assert.ok(live.every(g => g >= 99000 && g <= 101000), 'live rows smoothed: ' + live);
   assert.ok(out.filter(r => r.is_final === true).every(r => r.total_generation === 100000));
   // switches
-  const off = despike(rows.slice(), readOptions({ H2_CUTOVER: 'off', H2_LIVE_MEDIAN_ROWS: '1' }));
+  const off = despike(rows.slice(), readOptions({ H2_CUTOVER: 'off', H2_LIVE_MEDIAN_ROWS: '1', H2_SHOW_LIVE: 'on' }));
   assert.ok(off.some(r => r.total_generation === 190000) && off.some(r => r.total_generation === 140000));
 }
 console.log('despike: all tests passed');

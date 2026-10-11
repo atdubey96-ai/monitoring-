@@ -1,6 +1,6 @@
 const { getConfig, sendJson, sendMethodNotAllowed, fetchSupabase } = require('./_lib/config');
 const { requireAuth } = require('./_lib/session');
-const { despike } = require('./_lib/despike');
+const { despike, readOptions } = require('./_lib/despike');
 
 module.exports = async (req, res) => {
   if(req.method !== 'GET'){
@@ -41,7 +41,9 @@ module.exports = async (req, res) => {
       return sendJson(res, upstream.status, { error:'Upstream data request failed', detail:text.slice(0, 300) });
     }
 
-    const rows = despike(await upstream.json(), undefined, config.supabaseTimeColumn, config.supabasePushedAtColumn);
+    const options = readOptions();
+    if(url.searchParams.get('live') === '1') options.showLive = true;     // opt in to the unsettled live tail
+    const rows = despike(await upstream.json(), options, config.supabaseTimeColumn, config.supabasePushedAtColumn);
     return sendJson(res, 200, { rows });
   } catch(err){
     console.error('dashboard-data error', err);
