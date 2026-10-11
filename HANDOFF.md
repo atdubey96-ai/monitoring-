@@ -11,6 +11,7 @@ user's OFFICE PC and cannot be edited from here.
   NOT done by choice: dedupe of 109 old duplicate timestamps / unique index (user declined the DELETE).
   Gotcha: the connector hangs ~60 s on statements containing DELETE/DROP (waits for user approval). Use CREATE OR REPLACE ... instead.
 * Dashboard API patch DEPLOYED to production 11-Oct-2026 via the Vercel connector (api only; index.html unchanged = no amber band yet). Rollback target: dpl_Cagj4KPrE12LQnQXqfrVXcFXmMan (30-Aug build). Includes `dropSupersededRows` (hides PC #2 old-style rows where PC #1 settled rows exist).
+* 11-Oct: y-axis add-on deployed (dashboard-enhance.js + sw.js v5; dpl_CgGmZmR5n6LQVaShh8PMcEtVgnU7; previous dpl_EQLNATcqg7FoUNYE46vygzykyKBi).
 * Evidence (DB, last 12 h): PC1 settled HGU-4 sd 632 (63.7k-66.8k) vs PC2 old macro sd 7,412 (47k-82k).
 
 ## PREFERRED ROUTE (no tokens, no network settings): claude.ai connectors

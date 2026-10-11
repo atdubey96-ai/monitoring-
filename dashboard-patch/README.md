@@ -22,3 +22,11 @@ A second office PC still runs the old macro and pushes unsettled values every 5 
 them where settled data has a gap or does not exist yet (older history, a PC that is offline). Options:
 `H2_SUPERSEDE` (on/off), `H2_GRID_SECONDS` (120), `H2_SUPERSEDE_TOLERANCE_SEC` (240).
 Deployed to production through the Vercel connector (API files only; `index.html` unchanged, so the amber live band is not live yet).
+
+## Update 11-Oct-2026: smarter y-axis scaling (`dashboard-enhance.js` + `sw.js`)
+`dashboard-enhance.js` replaces the page's `computeDynamicAxisBounds` after load: the axis fits the 10-90 % band +/- 40 %
+(old spikes no longer squash current values), the grid step adapts to the range, and a small "N pts off-scale" note is drawn
+whenever points fall outside the axis. `sw.js` (cache v5) injects the script into the page on navigation; if anything fails the
+original page loads unchanged. First load after the update installs the service worker, the second load applies the add-on.
+Opt out with `?noenhance=1`. Tested in headless Chromium (axis 36k-90k/2k step -> 35k-80k/5k step on spiky test data).
+Deployed through the Vercel connector (dpl_CgGmZmR5n6LQVaShh8PMcEtVgnU7).
