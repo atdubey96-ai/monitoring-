@@ -225,3 +225,112 @@
     window.addEventListener('appinstalled', function(){ btn.style.display = 'none'; });
   } catch(e){}
 })();
+
+/* Trend selector: click a unit in a chart header to see that trend alone (the axis re-fits to it); click it again,
+   or click "All", to see everything. Works on the Generation / Consumption charts and the other multi-line charts. */
+(function(){
+  'use strict';
+  if(/[?&]noenhance=1/.test(location.search)) return;
+  try {
+    var orig = window.renderDatasetHeaderReadout;
+    if(typeof orig !== 'function') return;
+    var st = document.createElement('style');
+    st.textContent = '.split-trend-pill[data-h2sel]{cursor:pointer;user-select:none;transition:opacity .15s,box-shadow .15s}' +
+      '.split-trend-pill.h2-off{opacity:.45}.split-trend-pill.h2-off .split-trend-pill-swatch{background:transparent}' +
+      '.split-trend-pill.h2-solo{box-shadow:0 0 0 2px var(--accent)}' +
+      '.split-trend-pill.h2-all{--accent:var(--blue);min-width:0}.split-trend-pill.h2-all .split-trend-pill-label{color:var(--blue)}' +
+      '.split-trend-pill[data-h2sel]:hover{box-shadow:0 0 0 2px rgba(26,111,232,.35)}';
+    document.head.appendChild(st);
+
+    function locate(chart){
+      if(typeof UNIT_TREND_SECTIONS === 'undefined') return null;
+      for(var sk in UNIT_TREND_SECTIONS){
+        var sec = UNIT_TREND_SECTIONS[sk];
+        for(var band in sec.charts){ if(sec.charts[band] === chart) return { key: sk, sec: sec, band: band }; }
+      }
+      return null;
+    }
+    function bandUnits(loc){ return splitUnitsByThreshold(loc.sec.units)[loc.band] || []; }
+
+    function decorate(wrap, chart){
+      var loc = locate(chart), items;       // items: { label, visible, node, onSolo(), onAll() }
+      var datasets = chart.data.datasets || [];
+      var labels;
+      if(loc){
+        var units = bandUnits(loc);
+        if(units.length < 2) return;
+        items = units.map(function(u){ return { id: u.key, label: u.label, visible: !!loc.sec.visibility[u.key] }; });
+      } else {
+        if(datasets.length < 2) return;
+        items = datasets.map(function(ds, i){ return { id: String(i), label: ds.label, visible: !ds.hidden }; });
+      }
+      var pills = [].slice.call(wrap.querySelectorAll('.split-trend-pill:not(.h2-all):not(.h2-off)'));
+      var frag = document.createDocumentFragment();
+      var anyOff = items.some(function(it){ return !it.visible; });
+      if(anyOff || items.length){
+        var all = document.createElement('div');
+        all.className = 'split-trend-pill h2-all'; all.setAttribute('data-h2sel', '__all__');
+        all.innerHTML = '<span class="split-trend-pill-label">All</span>';
+        frag.appendChild(all);
+      }
+      var visibleCount = items.filter(function(it){ return it.visible; }).length;
+      items.forEach(function(it){
+        var node = null;
+        for(var i = 0; i < pills.length; i++){
+          var l = pills[i].querySelector('.split-trend-pill-label');
+          if(l && l.textContent === it.label){ node = pills[i]; break; }
+        }
+        if(!node){
+          var ds = null; datasets.forEach(function(d){ if(d.label === it.label) ds = d; });
+          var color = ds && typeof ds.borderColor === 'string' ? ds.borderColor : '#8aa0b8';
+          node = document.createElement('div');
+          node.className = 'split-trend-pill h2-off';
+          node.style.setProperty('--accent', color);
+          node.innerHTML = '<span class="split-trend-pill-swatch"></span><span class="split-trend-pill-label"></span>';
+          node.querySelector('.split-trend-pill-label').textContent = it.label;
+        }
+        node.setAttribute('data-h2sel', it.id);
+        if(it.visible && visibleCount === 1 && items.length > 1) node.classList.add('h2-solo'); else node.classList.remove('h2-solo');
+        frag.appendChild(node);
+      });
+      wrap.innerHTML = '';
+      wrap.appendChild(frag);
+      if(!wrap.__h2Bound){
+        wrap.__h2Bound = true;
+        wrap.addEventListener('click', function(e){
+          var pill = e.target.closest && e.target.closest('[data-h2sel]');
+          if(!pill) return;
+          var id = pill.getAttribute('data-h2sel'), loc2 = locate(chart);
+          if(loc2){
+            var us = bandUnits(loc2), vis = us.filter(function(u){ return loc2.sec.visibility[u.key]; });
+            var restore = id === '__all__' || (vis.length === 1 && vis[0].key === id);
+            us.forEach(function(u){ loc2.sec.visibility[u.key] = restore ? true : (u.key === id); });
+            syncUnitTrendSection(loc2.key);
+          } else {
+            var ds2 = chart.data.datasets, shown = ds2.filter(function(d){ return !d.hidden; });
+            var restore2 = id === '__all__' || (shown.length === 1 && ds2.indexOf(shown[0]) === Number(id));
+            ds2.forEach(function(d, i){ d.hidden = restore2 ? false : (i !== Number(id)); });
+            if(typeof applyDynamicAxisRange === 'function') applyDynamicAxisRange(chart);
+            chart.update('none');
+            window.renderDatasetHeaderReadout(wrap, chart, chart._headerReadoutIndex);
+          }
+        });
+      }
+    }
+
+    // a unit switched off must also lose its floating name tag on the chart
+    if(window.Chart && Chart.register){
+      Chart.register({
+        id: 'h2SyncHidden',
+        afterUpdate: function(chart){
+          try { (chart.data.datasets || []).forEach(function(ds, i){ var m = chart.getDatasetMeta(i); if(ds.hidden) m.hidden = true; else if(m.hidden === true && ds.hidden === false) m.hidden = null; }); } catch(e){}
+        }
+      });
+    }
+    window.renderDatasetHeaderReadout = function(wrap, chart, hoverIndex){
+      orig(wrap, chart, hoverIndex);
+      try { decorate(wrap, chart); } catch(e){}
+    };
+    if(typeof syncUnitTrendSection === 'function'){ syncUnitTrendSection('gen'); syncUnitTrendSection('con'); }
+  } catch(e){}
+})();
