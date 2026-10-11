@@ -49,4 +49,35 @@ const fin = desc([mk(0,100000,90000), { ...mk(2,400000,90000), is_final: true },
 assert.strictEqual(despike(fin, opts)[1].total_generation, 400000);
 const prov = desc([mk(0,100000,90000), { ...mk(2,400000,90000), is_final: false }, mk(4,100500,90000)]);
 assert.strictEqual(despike(prov, opts)[1].total_generation, 100500);
+
+// ---- superseded old-style rows ----
+const { dropSupersededRows } = require('../api/_lib/despike');
+const at = (min, sec, gen, fin) => ({ snapshot_time: `2026-10-10T10:${String(min).padStart(2,'0')}:${String(sec).padStart(2,'0')}Z`, pushed_at: '2026-10-10T12:00:00Z', is_final: fin, total_generation: gen, total_consumption: 90000, difference: gen - 90000 });
+{
+  // settled rows every 2 min from 10:00 to 10:10; old-style rows at odd seconds in between, and one before the first settled row
+  const rows = [
+    at(0,0,100000,true), at(2,0,100100,true), at(4,0,100200,true), at(6,0,100300,true), at(8,0,100400,true), at(10,0,100500,true),
+    at(3,41,166000,false), at(8,41,60000,true),                // legacy rows inside the settled window (one flagged final by default)
+    { ...at(59,41,77777,false), snapshot_time: '2026-10-10T09:59:41Z' },   // before the first settled row -> kept
+    { ...at(15,41,88888,false), snapshot_time: '2026-10-10T10:15:41Z' }    // after the last settled row -> kept
+  ];
+  const kept = dropSupersededRows(rows, opts, 'snapshot_time').map(r => r.total_generation).sort((a, b) => a - b);
+  assert.deepStrictEqual(kept, [77777, 88888, 100000, 100100, 100200, 100300, 100400, 100500]);
+
+  // a gap in settled data keeps the old-style rows there (nothing within 4 min on both sides)
+  const gap = [at(0,0,100000,true), at(2,0,100100,true), at(20,0,100900,true), at(22,0,101000,true), at(11,0,0,false)];
+  gap[4] = { ...at(11,30,55555,false) };
+  assert.ok(dropSupersededRows(gap, opts, 'snapshot_time').some(r => r.total_generation === 55555));
+
+  // feature is off when rows do not carry is_final (old schema)
+  const legacy = rows.map(({ is_final, ...rest }) => rest);
+  assert.strictEqual(dropSupersededRows(legacy, opts, 'snapshot_time').length, legacy.length);
+  // switch
+  assert.strictEqual(dropSupersededRows(rows, readOptions({ H2_SUPERSEDE: 'off' }), 'snapshot_time').length, rows.length);
+
+  // end to end through despike(): newest-first in, spiky old-style rows gone, settled values untouched
+  const out = despike([...rows].sort((a, b) => b.snapshot_time.localeCompare(a.snapshot_time)), opts);
+  assert.ok(!out.some(r => r.total_generation === 166000 || r.total_generation === 60000));
+  assert.ok(out.some(r => r.total_generation === 100300));
+}
 console.log('despike: all tests passed');

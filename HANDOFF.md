@@ -10,7 +10,8 @@ user's OFFICE PC and cannot be edited from here.
 * Supabase (project `mozuuowwdfyqqvpiyetk`) APPLIED 10-Oct-2026 via the Supabase connector: backup table, is_final, raw log, triggers, clean view, duplicate absorber, legacy classifier.
   NOT done by choice: dedupe of 109 old duplicate timestamps / unique index (user declined the DELETE).
   Gotcha: the connector hangs ~60 s on statements containing DELETE/DROP (waits for user approval). Use CREATE OR REPLACE ... instead.
-* Dashboard patch tested locally; not yet deployed.
+* Dashboard API patch DEPLOYED to production 11-Oct-2026 via the Vercel connector (api only; index.html unchanged = no amber band yet). Rollback target: dpl_Cagj4KPrE12LQnQXqfrVXcFXmMan (30-Aug build). Includes `dropSupersededRows` (hides PC #2 old-style rows where PC #1 settled rows exist).
+* Evidence (DB, last 12 h): PC1 settled HGU-4 sd 632 (63.7k-66.8k) vs PC2 old macro sd 7,412 (47k-82k).
 
 ## PREFERRED ROUTE (no tokens, no network settings): claude.ai connectors
 * Supabase connector (OAuth) -> run the SQL with its SQL/migration tools, project ref `mozuuowwdfyqqvpiyetk` only. Never use create/pause/cost tools.
