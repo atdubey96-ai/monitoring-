@@ -133,7 +133,7 @@
   var HIDDEN_TABS = ['simulator', 'economics', 'reports']; /* Trip Simulator, Flaring ESG & Cost, Shift Report */
   if(/[?&]showall=1/.test(location.search)) return;
   try {
-    var HIDDEN_SELECTORS = ['#alarmRibbon']; /* red/amber alarm banner under the header */
+    var HIDDEN_SELECTORS = ['#alarmRibbon', '#themeToggleBtn', '.theme-toggle-mobile']; /* alarm banner under the header; dark-mode switch (light theme only, see api/page.js) */
     var css = HIDDEN_TABS.map(function(k){ return '.sidebar-link[data-tab-trigger="' + k + '"]'; }).concat(HIDDEN_SELECTORS).join(',') + '{display:none !important}';
     var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
     if(typeof KIOSK_TABS !== 'undefined' && KIOSK_TABS.length){

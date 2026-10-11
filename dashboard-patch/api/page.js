@@ -14,6 +14,9 @@ function load() {
     try { html = fs.readFileSync(p, 'utf8'); break; } catch (e) { /* try next */ }
   }
   if (html === null) throw new Error('app.html not found');
+  // light theme only: the page's own start-up script reads the saved theme, so make that always 'light'
+  html = html.replace("var saved = localStorage.getItem('h2-theme');",
+    "var saved = 'light'; try { localStorage.setItem('h2-theme', 'light'); } catch (e) {}");
   const at = html.lastIndexOf('</body>');
   cached = at === -1 ? html : html.slice(0, at) + TAG + '\n' + html.slice(at);
   return cached;
