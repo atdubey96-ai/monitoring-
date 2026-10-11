@@ -122,24 +122,17 @@ function smoothLiveRows(asc, options, timeColumn){
   return asc;
 }
 
-// The newest PHD values are not settled yet, so live (provisional) rows are erratic. They are overwritten by the settled
-// row a little later. Until then, keep them off the trend: hide provisional on-grid rows that are NEWER than the newest
-// settled row. (Switch on with H2_SHOW_LIVE=on or ?live=1.) Does nothing when no settled row exists yet.
+// The newest PHD values are not settled yet, so live (provisional) rows are erratic. Each is overwritten by its settled
+// row later - unless the settle delay was shortened meanwhile, which leaves provisional rows that never get replaced.
+// Keep all provisional on-grid rows off the trend once settled rows exist; the line is the settled rows only.
+// (Switch on with H2_SHOW_LIVE=on or the ?live=1 opt-in of /api/dashboard-data.)
 function hideUnsettledTail(rows, options, timeColumn){
   if(options.showLive) return rows;
   const grid = options.gridSeconds;
   const stamp = row => Date.parse(row[timeColumn]);
   const onGrid = t => Number.isFinite(t) && t % 1000 === 0 && (t / 1000) % grid === 0;
-  let newestFinal = -Infinity;
-  for(const row of rows){
-    const t = stamp(row);
-    if(onGrid(t) && row.is_final === true && t > newestFinal) newestFinal = t;
-  }
-  if(newestFinal === -Infinity) return rows;
-  return rows.filter(row => {
-    const t = stamp(row);
-    return !(onGrid(t) && row.is_final === false && t > newestFinal);
-  });
+  if(!rows.some(row => onGrid(stamp(row)) && row.is_final === true)) return rows;
+  return rows.filter(row => !(onGrid(stamp(row)) && row.is_final === false));
 }
 
 // rowsDesc: newest-first (same order Supabase returns). Returns newest-first.

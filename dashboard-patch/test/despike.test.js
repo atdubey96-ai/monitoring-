@@ -92,6 +92,7 @@ const at = (min, sec, gen, fin) => ({ snapshot_time: `2026-10-10T10:${String(min
   const sorted = rows.sort((a, b) => b.snapshot_time.localeCompare(a.snapshot_time));
   const hidden = despike(sorted, readOptions({}));
   assert.ok(!hidden.some(r => r.snapshot_time.startsWith('2026-10-11T09')), 'unsettled tail hidden by default');
+  assert.ok(!hidden.some(r => r.is_final === false && Date.parse(r.snapshot_time) % 120000 === 0), 'no provisional on-grid rows kept');
   const out = despike(sorted, readOptions({ H2_SHOW_LIVE: 'on' }));
   assert.ok(out.some(r => r.total_generation === 30000));
   assert.ok(!out.some(r => r.total_generation === 40000 || r.total_generation === 190000));
