@@ -75,3 +75,24 @@
   }
   try { if(typeof window.updateAllCharts === 'function') window.updateAllCharts(); } catch(e){}
 })();
+
+/* Hidden features (reversible - nothing is deleted from the page).
+   To bring a feature back: remove its key from HIDDEN_TABS below (or add ?showall=1 to the URL to see all of them). */
+(function(){
+  'use strict';
+  var HIDDEN_TABS = ['simulator', 'economics', 'reports']; /* Trip Simulator, Flaring ESG & Cost, Shift Report */
+  if(/[?&]showall=1/.test(location.search)) return;
+  try {
+    var css = HIDDEN_TABS.map(function(k){ return '.sidebar-link[data-tab-trigger="' + k + '"]'; }).join(',') + '{display:none !important}';
+    var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
+    if(typeof KIOSK_TABS !== 'undefined' && KIOSK_TABS.length){
+      for(var i = KIOSK_TABS.length - 1; i >= 0; i--) if(HIDDEN_TABS.indexOf(KIOSK_TABS[i]) !== -1) KIOSK_TABS.splice(i, 1);
+    }
+    function guard(){
+      var key = (location.hash || '').replace('#', '');
+      if(HIDDEN_TABS.indexOf(key) !== -1 && typeof activateTab === 'function') activateTab('overview');
+    }
+    window.addEventListener('hashchange', guard);
+    guard();
+  } catch(e){}
+})();

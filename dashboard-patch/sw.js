@@ -1,5 +1,5 @@
-const CACHE_NAME = 'h2-dashboard-v5';
-const ENHANCE_TAG = '<script src="/dashboard-enhance.js?v=1"></script>';
+const CACHE_NAME = 'h2-dashboard-v6';
+const ENHANCE_TAG = '<script src="/dashboard-enhance.js?v=2"></script>';
 const ASSETS = [
   '/',
   '/index.html',

@@ -35,3 +35,8 @@ user's OFFICE PC and cannot be edited from here.
 
 Rules: never ask the user to paste secrets into chat; do not commit keys; do not push to main without the user's say-so.
 Key facts: see uniformance/PROVISIONAL_FINAL_SETUP.md and dashboard-patch/README.md.
+
+## Hidden dashboard features (reversible)
+Trip Simulator, Flaring ESG & Cost and Shift Report are **hidden, not deleted** (user request 11 Oct). The code stays in index.html; `dashboard-enhance.js` (block "Hidden features", `HIDDEN_TABS`) hides the sidebar buttons, removes them from kiosk rotation and redirects their `#hash` to Overview.
+- To restore: remove the key(s) (`simulator`, `economics`, `reports`) from `HIDDEN_TABS`, bump `?v=` in sw.js and CACHE_NAME, redeploy. Preview without redeploying: add `?showall=1` to the URL.
+- When the user asks for these features back, restore them.
