@@ -26,7 +26,7 @@ Private Const MAX_HOLDS    As Long = 3        ' after this many unsettled cycles
 Private Const CLOCK_CELL   As String = "M1"     ' cycle clock: Sheet1!D1 reads this instead of NOW()
 Private Const LAG_CELL     As String = "N1"     ' lag in minutes: Sheet1!D1 reads this too
 Private Const LIVE_LAG_MIN  As Long = 2        ' provisional (live) pass reads data this many min old
-Private Const FINAL_LAG_MIN As Long = 30       ' final pass reads data this many min old (>= Uniformance delay)
+Private Const FINAL_LAG_MIN As Long = 15       ' final pass reads data this many min old (>= Uniformance delay)
 ' ----------------------------------------
 
 Private haveLast   As Boolean
