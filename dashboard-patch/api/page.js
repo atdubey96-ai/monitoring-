@@ -3,11 +3,43 @@
 // a few copy deterrents are added for signed-in users.
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { getConfig } = require('./_lib/config');
 const { SESSION_COOKIE_NAME, parseCookies, verifySessionToken } = require('./_lib/session');
 
 const BOT_PATTERN = /(gptbot|chatgpt|oai-searchbot|claudebot|claude-web|anthropic|ccbot|perplexity|bytespider|google-extended|amazonbot|applebot-extended|cohere|diffbot|imagesift|omgili|facebookbot|meta-external|youbot|petalbot|semrush|ahrefs|mj12bot|dotbot|scrapy|python-requests|curl\/|wget\/|httpclient|go-http-client|headlesschrome|phantomjs|puppeteer|playwright)/i;
-const ENHANCE_TAG = '<script src="/api/enhance?v=5"></script>';
+// Fetch with timeout + retry (GET only). Some office networks silently drop reused connections, so a request can hang
+// forever; aborting after a few seconds and trying again opens a fresh connection.
+const RETRY_TAG = `<script>(function(){
+  if(!window.fetch || !window.AbortController) return;
+  var orig = window.fetch.bind(window);
+  window.fetch = function(input, init){
+    init = init || {};
+    var method = String(init.method || (input && input.method) || 'GET').toUpperCase();
+    if(method !== 'GET' || init.signal || (input && input.signal)) return orig(input, init);
+    return new Promise(function(resolve, reject){
+      var ctls = [], done = false, launched = 0, fails = 0, timers = [];
+      function finish(){ done = true; timers.forEach(clearTimeout); }
+      function launch(){
+        if(done || launched >= 4) return;
+        launched++;
+        var ctl = new AbortController(); ctls.push(ctl);
+        var opts = {}; for(var k in init){ opts[k] = init[k]; } opts.signal = ctl.signal;
+        orig(input, opts).then(function(r){
+          if(done) return;
+          finish(); ctls.forEach(function(c){ if(c !== ctl) c.abort(); }); resolve(r);
+        }, function(e){
+          if(done) return;
+          fails++;
+          if(fails >= launched){ if(launched >= 4){ finish(); reject(e); } else { launch(); } }
+        });
+      }
+      launch();
+      timers.push(setTimeout(launch, 3500), setTimeout(launch, 7000), setTimeout(launch, 11000));
+      timers.push(setTimeout(function(){ if(!done){ finish(); ctls.forEach(function(c){ c.abort(); }); reject(new Error('timeout')); } }, 30000));
+    });
+  };
+})();</script>`;
 const PROTECT_TAG = `<script>(function(){
   var stop = function(e){ e.preventDefault(); return false; };
   document.addEventListener('contextmenu', stop);
@@ -23,14 +55,17 @@ const PROTECT_TAG = `<script>(function(){
 const HIDDEN_TABS_JS = "['simulator','economics','reports']";
 
 let appHtml = null;
+let appEtag = null;
+function readBundled(name) {
+  const candidates = [path.join(process.cwd(), name), path.join(__dirname, '..', name)];
+  for (const p of candidates) {
+    try { return fs.readFileSync(p, 'utf8'); } catch (e) { /* try next */ }
+  }
+  throw new Error(name + ' not found');
+}
 function loadApp() {
   if (appHtml) return appHtml;
-  const candidates = [path.join(process.cwd(), 'app.html'), path.join(__dirname, '..', 'app.html')];
-  let html = null;
-  for (const p of candidates) {
-    try { html = fs.readFileSync(p, 'utf8'); break; } catch (e) { /* try next */ }
-  }
-  if (html === null) throw new Error('app.html not found');
+  let html = readBundled('app.html');
   // light theme only: the page's own start-up script reads the saved theme, so make that always 'light'
   html = html.replace("var saved = localStorage.getItem('h2-theme');",
     "var saved = 'light'; try { localStorage.setItem('h2-theme', 'light'); } catch (e) {}\n" +
@@ -38,8 +73,22 @@ function loadApp() {
   // a link or bookmark to a hidden view (#simulator ...) must not crash start-up either
   html = html.replace("if(tabButtons.some(button => button.dataset.tabTrigger === fromHash)) return fromHash;",
     "if(" + HIDDEN_TABS_JS + ".indexOf(fromHash) === -1 && tabButtons.some(button => button.dataset.tabTrigger === fromHash)) return fromHash;");
+  // everything the page needs travels in ONE response (chart library + add-on inline), so a stalled extra request
+  // can no longer leave the page blank
+  try {
+    const chartLib = readBundled('chart.umd.min.js');
+    html = html.replace('<script src="chart.umd.min.js"></script>', () => '<script>' + chartLib + '</script>');
+  } catch (e) { console.error('chart library not bundled, using the separate file', e.message); }
+  html = html.replace('<head>', () => '<head>' + RETRY_TAG);
+  // the web-font stylesheet must never block the first paint (it comes from another server and can stall)
+  html = html.replace(/(<link href="https:\/\/fonts\.googleapis\.com[^>]*?) rel="stylesheet">/, (m, a) => a + ' rel="stylesheet" media="print" onload="this.media=\'all\'">');
+  let enhanceTag;
+  try { enhanceTag = '<script>' + readBundled('dashboard-enhance.js') + '</script>'; }
+  catch (e) { console.error('add-on not bundled, using the separate script', e.message); enhanceTag = '<script src="/api/enhance?v=6"></script>'; }
   const at = html.lastIndexOf('</body>');
-  appHtml = at === -1 ? html : html.slice(0, at) + PROTECT_TAG + ENHANCE_TAG + '\n' + html.slice(at);
+  const tail = PROTECT_TAG + enhanceTag + '\n';
+  appHtml = at === -1 ? html + tail : html.slice(0, at) + tail + html.slice(at);
+  appEtag = '"' + crypto.createHash('sha1').update(appHtml).digest('hex').slice(0, 20) + '"';
   return appHtml;
 }
 
@@ -74,7 +123,11 @@ document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
 try { if(navigator.serviceWorker){ navigator.serviceWorker.getRegistrations().then(function(rs){ rs.forEach(function(r){ r.unregister(); }); }); }
       if(window.caches){ caches.keys().then(function(ks){ ks.forEach(function(k){ caches.delete(k); }); }); } } catch(e){}
 document.getElementById('f').addEventListener('submit', function(){
-  var b = document.getElementById('b'); b.textContent = 'Signing in...'; setTimeout(function(){ b.disabled = true; }, 0);
+  var b = document.getElementById('b'), err = document.getElementById('err');
+  b.textContent = 'Signing in...'; setTimeout(function(){ b.disabled = true; }, 0);
+  // slow or dropped network: after 12 s let the user try again instead of waiting forever
+  setTimeout(function(){ try { window.stop(); } catch(e){} b.disabled = false; b.textContent = 'Sign in';
+    err.textContent = 'The network is slow. Please press Sign in again.'; }, 12000);
 });
 // back/forward navigation can restore this page in a frozen state: reset it
 window.addEventListener('pageshow', function(e){ if(e.persisted){ var b = document.getElementById('b'); b.disabled = false; b.textContent = 'Sign in'; } });
@@ -84,7 +137,7 @@ function send(res, status, body, type, extra) {
   res.statusCode = status;
   if (extra) Object.keys(extra).forEach(k => res.setHeader(k, extra[k]));
   res.setHeader('Content-Type', type || 'text/html; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  if (!res.getHeader || !res.getHeader('Cache-Control')) res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
   res.end(body);
 }
@@ -102,7 +155,15 @@ module.exports = (req, res) => {
       return send(res, 200, LOGIN_HTML.replace('__ERR__', msg));
     }
     console.info('page app', ua.slice(0, 70));
-    return send(res, 200, loadApp());
+    const html = loadApp();
+    res.setHeader('ETag', appEtag);
+    if (req.headers['if-none-match'] === appEtag) {
+      res.statusCode = 304;
+      res.setHeader('Cache-Control', 'private, no-cache');
+      return res.end();
+    }
+    res.setHeader('Cache-Control', 'private, no-cache');
+    return send(res, 200, html, undefined, { 'Cache-Control': 'private, no-cache' });
   } catch (e) {
     console.error('page error', e);
     return send(res, 500, 'Dashboard page unavailable', 'text/plain; charset=utf-8');

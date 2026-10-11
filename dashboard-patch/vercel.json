@@ -75,7 +75,7 @@
   ],
   "functions": {
     "api/page.js": {
-      "includeFiles": "app.html"
+      "includeFiles": "*"
     },
     "api/enhance.js": {
       "includeFiles": "dashboard-enhance.js"
