@@ -1,7 +1,7 @@
 /* H2 dashboard add-on (loaded after the main page script).
    Smarter y-axis auto-scale for the trend charts:
-   - fits the axis to the full data range (nothing clipped), with a grid step that suits the range;
-   - picks a fine grid step (about 14 labelled y values; the page's fixed step is kept only when it gives 10-20);
+   - fits the axis to the bulk of the data (3rd-97th percentile + padding); a small "N pts off-scale" note counts anything beyond it (?fullrange=1 shows everything);
+   - picks a fine grid step (about 10-18 labelled y values; the page's fixed step is kept only when it gives 10-20);
    - draws faint minor gridlines on both axes (y: 5 per step, x: 4 between time labels).
    Disable with ?noenhance=1 in the URL. */
 (function(){
@@ -16,7 +16,7 @@
     return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
   }
   function niceStep(range){
-    var rough = Math.max(Math.abs(range), 1e-9) / 14;      // about 14 labelled gridlines
+    var rough = Math.max(Math.abs(range), 1e-9) / 18;      // about 10-18 labelled gridlines
     var mag = Math.pow(10, Math.floor(Math.log10(rough)));
     var n = rough / mag;
     return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * mag;
@@ -28,10 +28,13 @@
     if(v.length < 40) return original(values, cfg);
     var sorted = v.slice().sort(function(a, b){ return a - b; });
     var dataMin = sorted[0], dataMax = sorted[sorted.length - 1];
-    var q10 = quantile(sorted, 0.10), q90 = quantile(sorted, 0.90);
-    var core = Math.max(q90 - q10, 1e-9);
-    // show the whole data range (nothing clipped); the grid step is still chosen to suit the range
-    var lo = dataMin, hi = dataMax;
+    // fit the axis to the bulk of the data (3rd-97th percentile + 30 % padding) so a few old spikes cannot squash
+    // today's values; points beyond it are counted in the "N pts off-scale" note. ?fullrange=1 shows everything.
+    var full = /[?&]fullrange=1/.test(location.search);
+    var q03 = quantile(sorted, 0.03), q97 = quantile(sorted, 0.97);
+    var core = Math.max(q97 - q03, 1e-9);
+    var lo = full ? dataMin : Math.max(dataMin, q03 - 0.3 * core);
+    var hi = full ? dataMax : Math.min(dataMax, q97 + 0.3 * core);
     if(cfg.includeZero){ lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
     var range = Math.max(hi - lo, 1e-9);
     var step = niceStep(range);
