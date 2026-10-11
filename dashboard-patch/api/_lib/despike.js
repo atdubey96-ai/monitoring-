@@ -34,7 +34,9 @@ function readOptions(env = process.env){
     absFloor: num('H2_SPIKE_ABS_FLOOR', 1),
     supersede: String(env.H2_SUPERSEDE || 'on').toLowerCase() !== 'off',
     gridSeconds: num('H2_GRID_SECONDS', 120),
-    supersedeToleranceMs: num('H2_SUPERSEDE_TOLERANCE_SEC', 240) * 1000
+    supersedeToleranceMs: num('H2_SUPERSEDE_TOLERANCE_SEC', 240) * 1000,
+    cutover: String(env.H2_CUTOVER || 'on').toLowerCase() !== 'off',
+    liveWindow: Math.max(1, Math.round(num('H2_LIVE_MEDIAN_ROWS', 5)))
   };
 }
 
@@ -71,10 +73,59 @@ function dropSupersededRows(rows, options, timeColumn){
   });
 }
 
+
+// Once the settled (on-grid) pusher is running, rows from an old-style pusher that are NEWER than its first row are
+// dropped, even where settled data has a gap: a straight bridge over a gap is cleaner than a cloud of unsettled spikes.
+function dropLegacyAfterCutover(rows, options, timeColumn){
+  if(!options.cutover || !rows.some(r => r && r.is_final !== undefined)) return rows;
+  const grid = options.gridSeconds;
+  const stamp = row => Date.parse(row[timeColumn]);
+  const onGrid = t => Number.isFinite(t) && t % 1000 === 0 && (t / 1000) % grid === 0;
+  let first = Infinity;
+  for(const row of rows){
+    const t = stamp(row);
+    if(onGrid(t) && t < first) first = t;
+  }
+  if(first === Infinity) return rows;
+  return rows.filter(row => {
+    const t = stamp(row);
+    return !Number.isFinite(t) || onGrid(t) || t < first;
+  });
+}
+
+// Live (provisional) rows are still unsettled. Show each as the median of itself and the rows just before it
+// (rejects up to half of the window being erratic) instead of the raw value. Settled rows are never altered.
+function smoothLiveRows(asc, options, timeColumn){
+  if(options.liveWindow < 3) return asc;
+  const grid = options.gridSeconds;
+  const onGrid = row => { const t = Date.parse(row[timeColumn]); return Number.isFinite(t) && t % 1000 === 0 && (t / 1000) % grid === 0; };
+  let first = -1;
+  for(let i = 0; i < asc.length; i++){ if(onGrid(asc[i])){ first = i; break; } }
+  if(first < 0) return asc;
+  const original = asc.map(row => ({ ...row }));
+  for(let i = first; i < asc.length; i++){
+    if(asc[i].is_final !== false) continue;
+    const from = Math.max(first, i - options.liveWindow + 1);
+    if(i - from + 1 < 3) continue;
+    for(const col of NUMERIC_COLUMNS){
+      const vals = [];
+      for(let k = from; k <= i; k++){ const n = toNumber(original[k][col]); if(n !== null) vals.push(n); }
+      if(vals.length < 3 || toNumber(original[i][col]) === null) continue;
+      vals.sort((a, b) => a - b);
+      const mid = vals.length >> 1;
+      asc[i][col] = vals.length % 2 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
+    }
+    const gen = toNumber(asc[i].total_generation), con = toNumber(asc[i].total_consumption);
+    if(gen !== null && con !== null) asc[i].difference = gen - con;
+  }
+  return asc;
+}
+
 // rowsDesc: newest-first (same order Supabase returns). Returns newest-first.
 function despike(rowsDesc, options = readOptions(), timeColumn = 'snapshot_time', pushedAtColumn = 'pushed_at'){
   if(!options.enabled || !Array.isArray(rowsDesc) || rowsDesc.length === 0) return rowsDesc;
   rowsDesc = dropSupersededRows(rowsDesc, options, timeColumn);
+  rowsDesc = dropLegacyAfterCutover(rowsDesc, options, timeColumn);
 
   // 1. one row per snapshot time (keep the most recently pushed)
   const byTime = new Map();
@@ -112,7 +163,7 @@ function despike(rowsDesc, options = readOptions(), timeColumn = 'snapshot_time'
       if(gen !== null && con !== null) asc[i].difference = gen - con;
     }
   }
-  return asc.reverse();
+  return smoothLiveRows(asc, options, timeColumn).reverse();
 }
 
 module.exports = { despike, readOptions, dropSupersededRows, NUMERIC_COLUMNS };
