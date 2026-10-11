@@ -38,6 +38,18 @@
         {
           "key": "X-Robots-Tag",
           "value": "noindex, nofollow"
+        },
+        {
+          "key": "X-Permitted-Cross-Domain-Policies",
+          "value": "none"
+        },
+        {
+          "key": "X-DNS-Prefetch-Control",
+          "value": "off"
+        },
+        {
+          "key": "Origin-Agent-Cluster",
+          "value": "?1"
         }
       ]
     },
@@ -64,6 +76,16 @@
   "functions": {
     "api/page.js": {
       "includeFiles": "app.html"
+    },
+    "api/enhance.js": {
+      "includeFiles": "dashboard-enhance.js"
     }
-  }
+  },
+  "redirects": [
+    {
+      "source": "/(app\\.html|dashboard-enhance\\.js|package\\.json|package-lock\\.json|vercel\\.json)",
+      "destination": "/",
+      "permanent": false
+    }
+  ]
 }

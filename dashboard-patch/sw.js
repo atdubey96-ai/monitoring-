@@ -1,8 +1,5 @@
-const CACHE_NAME = 'h2-dashboard-v7';
-const ENHANCE_TAG = '<script src="/dashboard-enhance.js?v=3"></script>';
+const CACHE_NAME = 'h2-dashboard-v8';
 const ASSETS = [
-  '/',
-  '/index.html',
   '/manifest.json',
   '/icon.svg',
   '/chart.umd.min.js'
@@ -39,27 +36,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   if(request.mode === 'navigate'){
-    event.respondWith(
-      fetch(request).then(async (response) => {
-        // add the dashboard add-on script (smarter chart scaling) to the page; any problem -> original page
-        try {
-          const type = response.headers.get('content-type') || '';
-          if(!response.ok || !type.includes('text/html')) return response;
-          const html = await response.clone().text();
-          const at = html.lastIndexOf('</body>');
-          if(at === -1 || html.includes('dashboard-enhance.js')) return response;
-          const headers = new Headers(response.headers);
-          headers.delete('content-length');
-          headers.delete('content-encoding');
-          return new Response(html.slice(0, at) + ENHANCE_TAG + '\n' + html.slice(at), {
-            status: response.status, statusText: response.statusText, headers
-          });
-        } catch(err){
-          return response;
-        }
-      }).catch(() => caches.match('/index.html'))
-    );
-    return;
+    return;      // pages always come straight from the server (login page or dashboard); never cached
   }
 
   event.respondWith(
