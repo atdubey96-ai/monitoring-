@@ -1,6 +1,6 @@
 /* H2 dashboard add-on (loaded after the main page script).
    Smarter y-axis auto-scale for the trend charts:
-   - fits the axis to the bulk of the data (3rd-97th percentile + padding); a small "N pts off-scale" note counts anything beyond it (?fullrange=1 shows everything);
+   - covers every point (nothing is cut off); ?fit=1 fits the bulk of the data instead, with an "N pts off-scale" note;
    - picks a fine grid step (about 10-18 labelled y values; the page's fixed step is kept only when it gives 10-20);
    - draws faint minor gridlines on both axes (y: 5 per step, x: 4 between time labels).
    Disable with ?noenhance=1 in the URL. */
@@ -28,9 +28,9 @@
     if(v.length < 40) return original(values, cfg);
     var sorted = v.slice().sort(function(a, b){ return a - b; });
     var dataMin = sorted[0], dataMax = sorted[sorted.length - 1];
-    // fit the axis to the bulk of the data (3rd-97th percentile + 30 % padding) so a few old spikes cannot squash
-    // today's values; points beyond it are counted in the "N pts off-scale" note. ?fullrange=1 shows everything.
-    var full = /[?&]fullrange=1/.test(location.search);
+    // default: the axis covers every point (nothing is ever cut off). ?fit=1 fits the bulk of the data instead
+    // (3rd-97th percentile + 30 % padding) and counts the points beyond it in the "N pts off-scale" note.
+    var full = !/[?&]fit=1/.test(location.search);        // default: show every point, nothing clipped
     var q03 = quantile(sorted, 0.03), q97 = quantile(sorted, 0.97);
     var core = Math.max(q97 - q03, 1e-9);
     var lo = full ? dataMin : Math.max(dataMin, q03 - 0.3 * core);
