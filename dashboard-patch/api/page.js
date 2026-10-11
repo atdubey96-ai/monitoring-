@@ -76,7 +76,10 @@ document.getElementById('f').addEventListener('submit', function(e){
   fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', signal: ctl ? ctl.signal : undefined,
     body: JSON.stringify({ username: document.getElementById('u').value.trim(), password: document.getElementById('p').value }) })
     .then(function(r){ clearTimeout(timer);
-      if(r.ok){ b.textContent = 'Opening dashboard...'; location.replace('/'); return; }
+      if(r.ok){
+        b.textContent = 'Opening dashboard...';
+        err.innerHTML = 'If the dashboard does not open in a few seconds, <a href="/?go=1">click here</a>.';
+        location.href = '/?go=' + Date.now(); return; }
       fail(r.status === 429 ? 'Too many attempts. Please wait a few minutes.' : r.status === 403 ? 'Invalid user ID or password.' : 'Server error (' + r.status + '). Please try again.'); })
     .catch(function(){ clearTimeout(timer); fail('No response from the server. Please check your connection and try again.'); });
 });
@@ -97,8 +100,7 @@ module.exports = (req, res) => {
     if (!ua || BOT_PATTERN.test(ua)) return send(res, 403, 'Forbidden', 'text/plain; charset=utf-8');
     const config = getConfig();
     const token = parseCookies(req)[SESSION_COOKIE_NAME];
-    // signed-out visitors also get their old cached copy / service worker cleared by the browser
-    if (!verifySessionToken(token, config.sessionSecret)) return send(res, 200, LOGIN_HTML, undefined, { 'Clear-Site-Data': '"cache", "storage"' });
+    if (!verifySessionToken(token, config.sessionSecret)) return send(res, 200, LOGIN_HTML);
     return send(res, 200, loadApp());
   } catch (e) {
     console.error('page error', e);

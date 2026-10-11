@@ -46,10 +46,6 @@
         {
           "key": "X-DNS-Prefetch-Control",
           "value": "off"
-        },
-        {
-          "key": "Origin-Agent-Cluster",
-          "value": "?1"
         }
       ]
     },
