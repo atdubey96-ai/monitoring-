@@ -1,0 +1,53 @@
+' =========================================================================
+' REPLACE the whole "Sub PushNow() ... End Sub" in Module1 with this.
+' (Everything else in Module1 stays as it is.)
+' Also in Module1 > Sub ManualSync, change the line
+'       PushH2Balance.PushH2Balance
+' to
+'       H2Push.Push True
+' =========================================================================
+Sub PushNow()
+    Dim startT As Date
+    startT = Now
+    On Error GoTo SafeReschedule
+
+    ' --- 1) FINAL pass: 30-min-old data, settle gate, overwrites the live row ---
+    Dim whyF As String, finalOk As Boolean, finalSt As Long, finalErr As String
+    Application.StatusBar = "BMS: FINAL pass (settling)... " & Format(Now(), "hh:mm:ss")
+    finalOk = SettledPush.PrepareFinal(whyF)
+    If finalOk Then
+        finalSt = H2Push.Push(True)
+        finalErr = H2Push.LastError
+    End If
+
+    ' --- 2) LIVE pass: newest data -> plant_data tags + provisional H2 row ---
+    Application.StatusBar = "BMS: LIVE pass... " & Format(Now(), "hh:mm:ss")
+    SettledPush.PrepareLive
+    Dim ok As Integer, fail As Integer
+    PushAllTags ok, fail
+    Dim liveSt As Long
+    liveSt = H2Push.Push(False)
+
+    Dim nextT As Date, msg As String
+    nextT = startT + TimeSerial(0, SYNC_INTERVAL_MIN, 0)
+    If finalOk Then
+        msg = "FINAL " & H2Push.Result(finalSt) & " [" & whyF & "]"
+    Else
+        msg = "FINAL HOLD [" & whyF & "]"
+    End If
+    msg = msg & " | LIVE " & H2Push.Result(liveSt) & " | tags OK=" & ok & " ERR=" & fail
+    If finalErr <> "" Then msg = msg & " | FINAL: " & finalErr
+    If H2Push.LastError <> "" Then msg = msg & " | LIVE: " & H2Push.LastError
+    LogStatus msg & " | Next: " & Format(nextT, "hh:mm:ss")
+    Application.StatusBar = "BMS: Last push " & Format(Now(), "hh:mm:ss") & "  |  Next: " & Format(nextT, "hh:mm:ss")
+ScheduleNext:
+    On Error Resume Next
+    NextRunTime = startT + TimeSerial(0, SYNC_INTERVAL_MIN, 0)
+    If NextRunTime < Now + TimeSerial(0, 0, 5) Then NextRunTime = Now + TimeSerial(0, 0, 5)
+    If SyncRunning Then Application.OnTime NextRunTime, "PushNow"
+    Exit Sub
+SafeReschedule:
+    LogStatus "PushNow ERROR: " & Err.Description
+    Application.StatusBar = "BMS: Error - retry in " & SYNC_INTERVAL_MIN & " min"
+    Resume ScheduleNext
+End Sub

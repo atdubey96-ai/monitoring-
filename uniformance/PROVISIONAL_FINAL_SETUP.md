@@ -1,0 +1,58 @@
+# Provisional + final setup (recommended design)
+
+**Idea.** Uniformance delivers history late (up to ~30 min for some tags), and the newest values are
+erratic until it does. So every 2-minute cycle the macro does two passes:
+
+| Pass | Reads data that is | Settle gate | Goes to Supabase as |
+|---|---|---|---|
+| FINAL | ~30 min old (has had time to arrive) | yes | `is_final = true`, **overwrites** the live row of the same timestamp |
+| LIVE | newest (~2 min old) | no | `is_final = false` (provisional), also fills `plant_data` tags |
+
+The dashboard always shows the live edge, shaded amber "LIVE - settling", and it is replaced by final
+values ~30 min later. A provisional push can never overwrite a final row (database guard), and
+lone spikes in provisional rows are repaired by the median trigger; final rows are never touched.
+
+## ORDER
+You can do the Excel part FIRST. `H2Push.bas` has a switch `SQL_READY = False` (top of the module): until the three SQL
+files have been run in Supabase it only sends the settled (30-min-old) row as a plain insert, exactly like the old push,
+and skips the live row (K1 shows `LIVE skipped`). After the SQL is done, change that one word to `True`.
+Then: Supabase SQL (3 files) -> set `SQL_READY = True` -> dashboard patch.
+
+## 1. Supabase (APPLIED on 10-Oct-2026 through the Supabase connector)
+Applied to project `mozuuowwdfyqqvpiyetk`: backup table `h2_material_balance_backup_20261010`, column `is_final`, raw log
+`h2_material_balance_raw`, spike-repair / final-guard / raw-log triggers, view `h2_material_balance_clean`, the
+duplicate absorber and the old-pusher classifier. SQL source files (run in this order if it ever has to be rebuilt):
+`supabase_spike_filter.sql`, `supabase_provisional_final.sql`, `supabase_upsert_guard.sql`.
+Deliberately NOT done: deleting the 109 old duplicate timestamps and adding a unique index (not needed: a trigger absorbs
+duplicates, so Excel uses a plain insert). `supabase_migration.sql` is therefore optional/obsolete.
+Rows from a second, old-style PC (timestamps off the 2-minute grid) are stored as provisional and spike-repaired.
+
+## 2. Excel
+1. `StopAutoSync`. Back up the file.
+2. `Sheet1`: **M1** `=NOW()` (macro overwrites it), **N1** `30` (macro overwrites it),
+   **D1** `=ROUND(FLOOR($M$1-$N$1/1440,2/1440)*86400,0)/86400`, **E1** `=D1-2/1440`.
+   `Sheet1!D3` uses `"2m"`, `UNIFORMANCE!D4` uses `"2m"` (already done).
+3. VBA editor (Alt+F11):
+   * Remove the old `SettledPush` module and import the new `SettledPush.bas`.
+   * Import the latest `H2Push.bas` (plain insert, no `on_conflict`). Open it and paste the `SUPABASE_URL` and `SUPABASE_KEY` lines from Module1 over the two
+     `PASTE` lines (copy them in Excel; do not retype the key).
+   * Module1: replace the whole `Sub PushNow() ... End Sub` with the text in `Module1_PushNow.txt`.
+     In `Sub ManualSync` change `PushH2Balance.PushH2Balance` to `H2Push.Push True`.
+   * Debug > Compile VBAProject, save as .xlsm.
+4. `StartAutoSync`. K1 should read like
+   `FINAL ok [settled in 3 reads] | LIVE ok | tags OK=14 ERR=0 | Next: hh:mm:ss`.
+   `FINAL HOLD [H32 4396.7->4966.1]` means data for that bucket was still changing: normal now and then.
+   `LIVE ERR 400` = SQL not run yet. `SETUP` = keys not pasted into H2Push.
+5. The old `PushH2Balance` module is no longer called; keep it until everything works, then delete it.
+
+## 3. Dashboard (Vercel project)
+Apply `dashboard-patch/` (see its README): API returns `is_final`, never alters final rows, falls back
+automatically if the column does not exist yet, and charts show the amber live band.
+
+## Tuning (top of `SettledPush.bas`)
+* `FINAL_LAG_MIN = 30`: lower it in 5-min steps while K1 stays clean (`FINAL ok`) for an hour; stop when
+  `FINAL HOLD` appears often and add 5 min.
+* `LIVE_LAG_MIN = 2`: how fresh the live edge is.
+* A cycle takes up to ~80 s (final pass settling) plus the live pass; the interval stays 2 min.
+* If a FINAL pass is held, that bucket stays provisional (median-repaired) until it is overwritten
+  by a later final push or stays as the best available value.
