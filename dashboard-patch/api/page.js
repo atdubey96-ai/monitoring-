@@ -82,8 +82,9 @@ document.getElementById('f').addEventListener('submit', function(e){
 });
 </script></body></html>`;
 
-function send(res, status, body, type) {
+function send(res, status, body, type, extra) {
   res.statusCode = status;
+  if (extra) Object.keys(extra).forEach(k => res.setHeader(k, extra[k]));
   res.setHeader('Content-Type', type || 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
@@ -96,7 +97,8 @@ module.exports = (req, res) => {
     if (!ua || BOT_PATTERN.test(ua)) return send(res, 403, 'Forbidden', 'text/plain; charset=utf-8');
     const config = getConfig();
     const token = parseCookies(req)[SESSION_COOKIE_NAME];
-    if (!verifySessionToken(token, config.sessionSecret)) return send(res, 200, LOGIN_HTML);
+    // signed-out visitors also get their old cached copy / service worker cleared by the browser
+    if (!verifySessionToken(token, config.sessionSecret)) return send(res, 200, LOGIN_HTML, undefined, { 'Clear-Site-Data': '"cache", "storage"' });
     return send(res, 200, loadApp());
   } catch (e) {
     console.error('page error', e);
