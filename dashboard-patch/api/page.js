@@ -19,6 +19,9 @@ const PROTECT_TAG = `<script>(function(){
   });
 })();</script>`;
 
+// views that are hidden (see dashboard-enhance.js): a saved last-visited tab or a #link to one must fall back to Overview
+const HIDDEN_TABS_JS = "['simulator','economics','reports']";
+
 let appHtml = null;
 function loadApp() {
   if (appHtml) return appHtml;
@@ -30,7 +33,11 @@ function loadApp() {
   if (html === null) throw new Error('app.html not found');
   // light theme only: the page's own start-up script reads the saved theme, so make that always 'light'
   html = html.replace("var saved = localStorage.getItem('h2-theme');",
-    "var saved = 'light'; try { localStorage.setItem('h2-theme', 'light'); } catch (e) {}");
+    "var saved = 'light'; try { localStorage.setItem('h2-theme', 'light'); } catch (e) {}\n" +
+    "    try { var lt = localStorage.getItem('h2-last-tab'); if (" + HIDDEN_TABS_JS + ".indexOf(lt) !== -1) localStorage.setItem('h2-last-tab', 'overview'); } catch (e) {}");
+  // a link or bookmark to a hidden view (#simulator ...) must not crash start-up either
+  html = html.replace("if(tabButtons.some(button => button.dataset.tabTrigger === fromHash)) return fromHash;",
+    "if(" + HIDDEN_TABS_JS + ".indexOf(fromHash) === -1 && tabButtons.some(button => button.dataset.tabTrigger === fromHash)) return fromHash;");
   const at = html.lastIndexOf('</body>');
   appHtml = at === -1 ? html : html.slice(0, at) + PROTECT_TAG + ENHANCE_TAG + '\n' + html.slice(at);
   return appHtml;
