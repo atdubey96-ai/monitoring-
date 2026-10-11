@@ -188,3 +188,40 @@
     document.head.appendChild(st);
   } catch(e){}
 })();
+
+/* Phone: "Install App" button in the quick-actions panel (the desktop header button is hidden on phones).
+   Chrome/Android: opens the install prompt the page already captured. iPhone/others: shows how to add it to the home screen. */
+(function(){
+  'use strict';
+  if(/[?&]noenhance=1/.test(location.search)) return;
+  try {
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+    var row = document.querySelector('.mobile-actions-panel .mobile-action-row');
+    if(standalone || !row || document.getElementById('mobileInstallBtn')) return;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'mobileInstallBtn';
+    btn.className = 'mobile-action-btn';
+    btn.style.cssText = 'display:none;width:100%;height:42px;border-radius:14px;align-items:center;justify-content:center;gap:8px;' +
+      'font-weight:700;color:var(--blue);background:var(--blue-lt);border:1px solid rgba(26,111,232,0.24);';
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>Install App</span>';
+    row.appendChild(btn);
+    var narrow = window.matchMedia('(max-width:780px)');
+    function show(){ btn.style.display = narrow.matches ? 'flex' : 'none'; }
+    show();
+    if(narrow.addEventListener) narrow.addEventListener('change', show);
+    btn.addEventListener('click', function(){
+      var p = (typeof deferredPrompt !== 'undefined') ? deferredPrompt : null;
+      if(p && p.prompt){
+        p.prompt();
+        if(p.userChoice) p.userChoice.then(function(c){ if(c && c.outcome === 'accepted') btn.style.display = 'none'; });
+        try { deferredPrompt = null; } catch(e){}
+        return;
+      }
+      var ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+      alert(ios ? 'To install: tap the Share button in Safari, then "Add to Home Screen".'
+                : 'To install: open the browser menu (three dots) and choose "Install app" or "Add to Home screen".');
+    });
+    window.addEventListener('appinstalled', function(){ btn.style.display = 'none'; });
+  } catch(e){}
+})();
