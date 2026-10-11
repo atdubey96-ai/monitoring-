@@ -1,7 +1,6 @@
 /* H2 dashboard add-on (loaded after the main page script).
    Smarter y-axis auto-scale for the trend charts:
-   - fits the axis to the main body of the data (10-90 % band +/- 40 %), so old spikes no longer squash today's values;
-   - never hides anything silently: a small "N pts off-scale" note is drawn when points fall outside the axis;
+   - fits the axis to the full data range (nothing clipped), with a grid step that suits the range;
    - picks the grid step to suit the range (the page's fixed 2000 step is kept only when it gives 5-14 gridlines).
    Disable with ?noenhance=1 in the URL. */
 (function(){
@@ -30,8 +29,8 @@
     var dataMin = sorted[0], dataMax = sorted[sorted.length - 1];
     var q10 = quantile(sorted, 0.10), q90 = quantile(sorted, 0.90);
     var core = Math.max(q90 - q10, 1e-9);
-    var lo = Math.max(dataMin, q10 - 0.4 * core);
-    var hi = Math.min(dataMax, q90 + 0.4 * core);
+    // show the whole data range (nothing clipped); the grid step is still chosen to suit the range
+    var lo = dataMin, hi = dataMax;
     if(cfg.includeZero){ lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
     var range = Math.max(hi - lo, 1e-9);
     var step = niceStep(range);
@@ -83,7 +82,8 @@
   var HIDDEN_TABS = ['simulator', 'economics', 'reports']; /* Trip Simulator, Flaring ESG & Cost, Shift Report */
   if(/[?&]showall=1/.test(location.search)) return;
   try {
-    var css = HIDDEN_TABS.map(function(k){ return '.sidebar-link[data-tab-trigger="' + k + '"]'; }).join(',') + '{display:none !important}';
+    var HIDDEN_SELECTORS = ['#alarmRibbon']; /* red/amber alarm banner under the header */
+    var css = HIDDEN_TABS.map(function(k){ return '.sidebar-link[data-tab-trigger="' + k + '"]'; }).concat(HIDDEN_SELECTORS).join(',') + '{display:none !important}';
     var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
     if(typeof KIOSK_TABS !== 'undefined' && KIOSK_TABS.length){
       for(var i = KIOSK_TABS.length - 1; i >= 0; i--) if(HIDDEN_TABS.indexOf(KIOSK_TABS[i]) !== -1) KIOSK_TABS.splice(i, 1);

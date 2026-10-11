@@ -41,3 +41,4 @@ Trip Simulator, Flaring ESG & Cost and Shift Report are **hidden, not deleted** 
 - To restore: remove the key(s) (`simulator`, `economics`, `reports`) from `HIDDEN_TABS`, bump `?v=` in sw.js and CACHE_NAME, redeploy. Preview without redeploying: add `?showall=1` to the URL.
 - When the user asks for these features back, restore them.
 - The page is now served by `api/page.js` (rewrite of `/` and `/index.html`; HTML stored as `app.html`), which injects `dashboard-enhance.js?v=3` on the server, so the hiding no longer depends on the browser's service worker.
+- Also hidden (user request 11 Oct): the alarm banner under the header (`#alarmRibbon`, includes the Alarm Journal button) — `HIDDEN_SELECTORS` in dashboard-enhance.js; restore by removing it from that list. Chart y-axis now fits the full data range (nothing clipped).
