@@ -63,15 +63,22 @@ const LOGIN_HTML = `<!doctype html>
 </form>
 <script>
 document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+// clear any old offline copy / service worker from earlier versions
+try { if(navigator.serviceWorker){ navigator.serviceWorker.getRegistrations().then(function(rs){ rs.forEach(function(r){ r.unregister(); }); }); }
+      if(window.caches){ caches.keys().then(function(ks){ ks.forEach(function(k){ caches.delete(k); }); }); } } catch(e){}
 document.getElementById('f').addEventListener('submit', function(e){
   e.preventDefault();
   var b = document.getElementById('b'), err = document.getElementById('err');
-  b.disabled = true; err.textContent = '';
-  fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin',
+  function fail(msg){ err.textContent = msg; b.disabled = false; b.textContent = 'Sign in'; }
+  b.disabled = true; b.textContent = 'Signing in...'; err.textContent = '';
+  var ctl = window.AbortController ? new AbortController() : null;
+  var timer = setTimeout(function(){ if(ctl) ctl.abort(); }, 20000);
+  fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', signal: ctl ? ctl.signal : undefined,
     body: JSON.stringify({ username: document.getElementById('u').value.trim(), password: document.getElementById('p').value }) })
-    .then(function(r){ if(r.ok){ location.replace('/'); return; }
-      err.textContent = r.status === 429 ? 'Too many attempts. Please wait a few minutes.' : 'Invalid user ID or password.'; b.disabled = false; })
-    .catch(function(){ err.textContent = 'Network error. Please try again.'; b.disabled = false; });
+    .then(function(r){ clearTimeout(timer);
+      if(r.ok){ b.textContent = 'Opening dashboard...'; location.replace('/'); return; }
+      fail(r.status === 429 ? 'Too many attempts. Please wait a few minutes.' : r.status === 403 ? 'Invalid user ID or password.' : 'Server error (' + r.status + '). Please try again.'); })
+    .catch(function(){ clearTimeout(timer); fail('No response from the server. Please check your connection and try again.'); });
 });
 </script></body></html>`;
 

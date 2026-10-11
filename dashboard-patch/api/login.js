@@ -51,6 +51,7 @@ module.exports = async (req, res) => {
     }
 
     attempts.delete(key);
+    console.info('login ok', key);
     setSessionCookie(req, res, config.authUser, config.sessionSecret);
     return sendJson(res, 200, { authenticated:true, user:config.authUser });
   } catch(err){
